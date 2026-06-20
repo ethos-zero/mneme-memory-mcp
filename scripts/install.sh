@@ -7,6 +7,7 @@ export HERMES_HOME="$MEMORY_HOME"
 INSTALL_HERMES=1
 CONFIGURE_CLIENTS=1
 INSTALL_AGENT_PLUGINS=1
+INSTALL_CONTINUITY=1
 PYTHON_BIN="${PYTHON_BIN:-}"
 
 usage() {
@@ -14,18 +15,21 @@ usage() {
 Mneme Memory MCP installer
 
 Usage:
-  ./scripts/install.sh [--no-hermes-install] [--no-client-config] [--no-agent-plugins]
+  ./scripts/install.sh [--no-hermes-install] [--no-client-config] [--no-agent-plugins] [--no-continuity]
 
 By default this installs Mneme into .venv and installs Hermes Agent if the
 `hermes` command is not already available. It also tries to wire Mneme into
 Codex and Claude Code, install OpenAI's Claude-to-Codex plugin, and install
-Ponytail for both clients when their CLIs are present.
+Ponytail for both clients when their CLIs are present. It also installs
+always-on memory instructions so fresh Claude and Codex chats start from
+the shared Mneme/Hermes memory layer.
 
 Options:
   --no-hermes-install  Skip automatic Hermes Agent installation.
   --no-client-config   Do not modify Codex or Claude MCP configuration.
   --no-agent-plugins   Do not install Codex/Claude/Ponytail plugins.
-  --memory-only        Same as --no-client-config --no-agent-plugins.
+  --no-continuity      Do not install global Claude/Codex memory instructions.
+  --memory-only        Same as --no-client-config --no-agent-plugins --no-continuity.
 
 Environment:
   MNEME_HOME    Memory home to use. Defaults to HERMES_HOME or ~/.hermes.
@@ -67,9 +71,13 @@ for arg in "$@"; do
     --no-agent-plugins)
       INSTALL_AGENT_PLUGINS=0
       ;;
+    --no-continuity)
+      INSTALL_CONTINUITY=0
+      ;;
     --memory-only)
       CONFIGURE_CLIENTS=0
       INSTALL_AGENT_PLUGINS=0
+      INSTALL_CONTINUITY=0
       ;;
     -h|--help)
       usage
@@ -171,6 +179,17 @@ install_agent_plugins() {
   fi
 }
 
+install_continuity() {
+  if [ "$INSTALL_CONTINUITY" -ne 1 ]; then
+    echo "==> Skipping always-on memory continuity installation."
+    return 0
+  fi
+
+  run_optional \
+    "Installing always-on Mneme memory continuity for Codex and Claude" \
+    "$ROOT/.venv/bin/mneme-memory-continuity" install --memory-home "$HERMES_HOME" --bin-dir "$ROOT/.venv/bin"
+}
+
 echo "==> Mneme Memory MCP"
 echo "repo: $ROOT"
 echo "memory home: $MEMORY_HOME"
@@ -203,11 +222,13 @@ mkdir -p "$MEMORY_HOME/memories"
 [ -f "$MEMORY_HOME/memories/MEMORY.md" ] || printf '# MEMORY.md\n\n' > "$MEMORY_HOME/memories/MEMORY.md"
 
 echo
-"$ROOT/.venv/bin/mneme-memory-doctor"
+install_continuity
 echo
 configure_clients
 echo
 install_agent_plugins
+echo
+"$ROOT/.venv/bin/mneme-memory-doctor"
 
 cat <<EOF
 
@@ -216,6 +237,8 @@ cat <<EOF
 The installer attempted to configure:
 
 - Mneme MCP in Codex and Claude Code
+- Always-on shared memory instructions for fresh Codex and Claude chats
+- Claude SessionStart memory injection
 - OpenAI codex-plugin-cc in Claude Code for Claude -> Codex delegation
 - Ponytail in Codex and Claude Code for smaller, safer code generation
 

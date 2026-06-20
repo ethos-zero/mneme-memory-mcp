@@ -20,6 +20,8 @@ Claude Code  <---->  mneme-memory-mcp  <---->  Codex
 ## What It Does
 
 - Remembers across chats, agents, and clients
+- Installs always-on memory instructions for fresh Claude and Codex chats
+- Auto-injects Markdown memory into new Claude Code sessions
 - Shares one Hermes-compatible memory home
 - Stores human-readable memory in Markdown
 - Stores searchable facts in SQLite FTS
@@ -53,6 +55,8 @@ The installer:
 - creates a local `.venv`
 - installs `mneme-memory-mcp`
 - creates `~/.hermes/memories`
+- installs always-on Mneme instructions into global Claude and Codex guidance files
+- configures a Claude Code `SessionStart` hook that injects the shared Markdown memory into fresh sessions
 - configures Mneme as an MCP server in Codex and Claude Code when those CLIs are present
 - installs [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) into Claude Code for Claude -> Codex delegation
 - installs [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) into Codex and Claude Code for minimal, safer implementation behavior
@@ -70,6 +74,12 @@ For memory-only setup without client/plugin changes:
 ./scripts/install.sh --memory-only
 ```
 
+To keep MCP/plugin setup but skip global memory instructions:
+
+```bash
+./scripts/install.sh --no-continuity
+```
+
 Check the setup:
 
 ```bash
@@ -85,9 +95,10 @@ Mneme makes Claude and Codex meet in the same memory field.
 - Claude -> Codex: installed through OpenAI's `codex-plugin-cc` Claude Code plugin.
 - Codex -> Claude: exposed through Mneme's `delegate_to_claude` MCP tool.
 - Shared memory: both clients use the same Mneme MCP server pointed at the same Hermes-compatible memory home.
+- Always-on continuity: global Claude/Codex instructions and a Claude `SessionStart` hook make new chats consult shared memory before substantive work.
 - Efficient implementation mode: Ponytail is installed for both clients when available.
 
-More details live in [docs/agent-mesh.md](docs/agent-mesh.md) and [docs/ponytail.md](docs/ponytail.md).
+More details live in [docs/agent-mesh.md](docs/agent-mesh.md), [docs/always-on-memory.md](docs/always-on-memory.md), and [docs/ponytail.md](docs/ponytail.md).
 
 ## Hermes Pairing
 
@@ -125,6 +136,11 @@ The MCP server exposes:
 - `agent_bridge_status` - check local Claude, Codex, and Node readiness
 - `delegate_to_claude` - ask Claude Code to handle a one-shot task with Mneme memory injected
 - `delegate_to_codex` - ask Codex to handle a one-shot task with Mneme memory injected
+
+Mneme also installs two local CLI commands:
+
+- `mneme-memory` - read, search, list, and add shared memory without an MCP client
+- `mneme-memory-continuity` - install or inspect always-on Claude/Codex memory continuity
 
 ## Manual Install
 
@@ -187,23 +203,24 @@ Add this to `~/.claude.json`:
 
 If you already have other `mcpServers`, merge the `mneme-memory` entry into the existing object.
 
-## Optional Claude SessionStart Hook
+## Always-On Client Memory
 
-Claude Code can also auto-inject the Markdown memory at the beginning of each session. Copy:
+The installer writes managed instruction blocks to:
 
-```bash
-examples/sessionstart-hermes-memory.sh
+- `~/.codex/AGENTS.md`
+- `~/.claude/CLAUDE.md`
+
+It also installs this Claude Code hook:
+
+```text
+~/.claude/hooks/mneme-memory-sessionstart.sh
 ```
 
-to something like:
+and merges it into `~/.claude/settings.json` under `SessionStart`.
 
-```bash
-~/.claude/hooks/sessionstart-hermes-memory.sh
-```
+The MCP server is still the source of truth for search and writes; the global instructions and hook make the high-signal memory summary visible immediately in fresh chats.
 
-Then add a `SessionStart` hook in `~/.claude/settings.json`.
-
-The MCP server is still the source of truth for search and writes; the hook just makes the high-signal Markdown summary visible immediately.
+Read the full behavior in [docs/always-on-memory.md](docs/always-on-memory.md).
 
 ## Environment Variables
 

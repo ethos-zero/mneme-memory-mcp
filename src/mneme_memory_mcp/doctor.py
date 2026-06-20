@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .continuity import continuity_status
 from .store import resolve_db_path, resolve_home, resolve_memory_dir
 
 
@@ -73,6 +74,9 @@ def status_lines() -> list[str]:
     else:
         lines.append("Hermes Agent: missing")
         lines.append("Install Hermes with: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash")
+
+    lines.extend(["", "Always-on memory continuity:"])
+    lines.extend(f"  {line}" for line in continuity_status().lines())
 
     lines.extend(
         [

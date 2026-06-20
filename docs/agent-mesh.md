@@ -4,13 +4,14 @@
 
 Mneme is the shared memory layer and the bridge surface between local agents.
 
-The all-in-one installer wires five pieces:
+The all-in-one installer wires six pieces:
 
 1. Hermes-compatible local memory in `~/.hermes`
 2. Mneme MCP in Codex and Claude Code
 3. OpenAI's Claude Code plugin for Claude -> Codex delegation
 4. Mneme's MCP bridge tools for Codex -> Claude delegation
 5. Ponytail for smaller, safer code-generation behavior in both clients
+6. Always-on memory instructions so fresh Claude and Codex chats start from shared memory
 
 ## Install
 
@@ -72,6 +73,19 @@ That home contains:
 ~/.hermes/memories/MEMORY.md
 ~/.hermes/memory_store.db
 ```
+
+The installer also writes managed Mneme continuity blocks into:
+
+```text
+~/.codex/AGENTS.md
+~/.claude/CLAUDE.md
+```
+
+and configures a Claude Code `SessionStart` hook that injects USER.md and MEMORY.md into new Claude sessions.
+
+That means fresh local Claude and Codex chats should begin by checking the same memory layer before answering, then keep improving the layer with durable memories when the user expects continuity.
+
+More details live in [always-on-memory.md](always-on-memory.md).
 
 ## Bridge Tools
 
