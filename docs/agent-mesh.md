@@ -4,7 +4,7 @@
 
 Mneme is the shared memory layer and the bridge surface between local agents.
 
-The all-in-one installer wires six pieces:
+With the `global` profile, the all-in-one installer wires six pieces:
 
 1. Hermes-compatible local memory in `~/.hermes`
 2. Mneme MCP in Codex and Claude Code
@@ -12,6 +12,8 @@ The all-in-one installer wires six pieces:
 4. Mneme's MCP bridge tools for Codex -> Claude delegation
 5. Ponytail for smaller, safer code-generation behavior in both clients
 6. Always-on memory instructions so fresh Claude and Codex chats start from shared memory
+
+With the `project` profile, Mneme still wires the MCP server and optional agent plugins, but memory comes from `.env` and global Claude/Codex memory instructions are skipped.
 
 ## Install
 

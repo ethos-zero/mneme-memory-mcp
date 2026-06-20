@@ -2,8 +2,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MEMORY_HOME="${MNEME_HOME:-${HERMES_HOME:-$HOME/.hermes}}"
-export HERMES_HOME="$MEMORY_HOME"
+GLOBAL_MEMORY_HOME="${MNEME_HOME:-${HERMES_HOME:-$HOME/.hermes}}"
+MEMORY_HOME="$GLOBAL_MEMORY_HOME"
+ENV_FILE="${MNEME_ENV_FILE:-$ROOT/.env}"
+PROJECT_MEMORY_HOME="${MNEME_PROJECT_HOME:-$ROOT/.mneme}"
+SETUP_PROFILE="${MNEME_SETUP_PROFILE:-}"
+MCP_COMMAND="$ROOT/.venv/bin/mneme-memory-mcp"
+MCP_ARGS=()
+MCP_STATIC_ENV=1
 INSTALL_HERMES=1
 CONFIGURE_CLIENTS=1
 INSTALL_AGENT_PLUGINS=1
@@ -15,7 +21,7 @@ usage() {
 Mneme Memory MCP installer
 
 Usage:
-  ./scripts/install.sh [--no-hermes-install] [--no-client-config] [--no-agent-plugins] [--no-continuity]
+  ./scripts/install.sh [--profile global|project|server] [options]
 
 By default this installs Mneme into .venv and installs Hermes Agent if the
 `hermes` command is not already available. It also tries to wire Mneme into
@@ -24,7 +30,19 @@ Ponytail for both clients when their CLIs are present. It also installs
 always-on memory instructions so fresh Claude and Codex chats start from
 the shared Mneme/Hermes memory layer.
 
+Setup profiles:
+  global   Machine-wide persistent memory in ~/.hermes, with global Claude/Codex
+           instructions and Claude SessionStart memory injection.
+  project  Project/env-scoped memory from .env, defaulting to ./.mneme. This
+           configures MCP clients without installing global memory instructions.
+  server   Install the local Mneme server only; print manual config.
+
 Options:
+  --profile VALUE      Select global, project, or server setup.
+  --global-memory      Alias for --profile global.
+  --project-memory     Alias for --profile project.
+  --server-only        Alias for --profile server.
+  --env-file PATH      .env file for project/env-scoped memory.
   --no-hermes-install  Skip automatic Hermes Agent installation.
   --no-client-config   Do not modify Codex or Claude MCP configuration.
   --no-agent-plugins   Do not install Codex/Claude/Ponytail plugins.
@@ -34,6 +52,9 @@ Options:
 Environment:
   MNEME_HOME    Memory home to use. Defaults to HERMES_HOME or ~/.hermes.
   HERMES_HOME   Hermes-compatible memory home.
+  MNEME_SETUP_PROFILE  global, project, or server.
+  MNEME_ENV_FILE       .env file for the project profile.
+  MNEME_PROJECT_HOME   Default memory home for the project profile.
   PYTHON_BIN    Python 3.10+ binary to use. Auto-detected when unset.
 EOF
 }
@@ -60,8 +81,39 @@ PY
   return 1
 }
 
-for arg in "$@"; do
-  case "$arg" in
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --profile)
+      shift
+      if [ "$#" -eq 0 ]; then
+        echo "--profile requires a value: global, project, or server" >&2
+        exit 2
+      fi
+      SETUP_PROFILE="$1"
+      ;;
+    --profile=*)
+      SETUP_PROFILE="${1#*=}"
+      ;;
+    --global-memory)
+      SETUP_PROFILE="global"
+      ;;
+    --project-memory|--env-memory)
+      SETUP_PROFILE="project"
+      ;;
+    --server-only)
+      SETUP_PROFILE="server"
+      ;;
+    --env-file)
+      shift
+      if [ "$#" -eq 0 ]; then
+        echo "--env-file requires a path" >&2
+        exit 2
+      fi
+      ENV_FILE="$1"
+      ;;
+    --env-file=*)
+      ENV_FILE="${1#*=}"
+      ;;
     --no-hermes|--no-hermes-install)
       INSTALL_HERMES=0
       ;;
@@ -89,6 +141,7 @@ for arg in "$@"; do
       exit 2
       ;;
   esac
+  shift
 done
 
 find_hermes() {
@@ -119,6 +172,152 @@ run_optional() {
   return 0
 }
 
+abspath_under_root() {
+  case "$1" in
+    /*)
+      printf '%s\n' "$1"
+      ;;
+    *)
+      printf '%s\n' "$ROOT/$1"
+      ;;
+  esac
+}
+
+choose_profile() {
+  if [ -n "$SETUP_PROFILE" ]; then
+    return 0
+  fi
+
+  if [ -t 0 ] && [ "${MNEME_INSTALL_NONINTERACTIVE:-0}" != "1" ]; then
+    cat <<'EOF'
+
+Choose a Mneme setup profile:
+
+  1) Global persistent memory
+     Best for a personal machine. Claude and Codex always start from the
+     same ~/.hermes memory layer, including fresh chats.
+
+  2) Project/env-scoped memory
+     Best for sharing the repo or isolating work. Memory comes from .env
+     and defaults to ./.mneme. No global Claude/Codex instructions are added.
+
+  3) Server only / manual wiring
+     Installs Mneme locally and prints config. No client, plugin, or global
+     memory changes.
+
+EOF
+    printf 'Select [1]: '
+    read -r choice
+    case "${choice:-1}" in
+      1|global|g)
+        SETUP_PROFILE="global"
+        ;;
+      2|project|p|env)
+        SETUP_PROFILE="project"
+        ;;
+      3|server|s|manual)
+        SETUP_PROFILE="server"
+        ;;
+      *)
+        echo "Unknown selection: $choice" >&2
+        exit 2
+        ;;
+    esac
+  else
+    SETUP_PROFILE="global"
+  fi
+}
+
+read_env_memory_home() {
+  "$PYTHON_BIN" - "$ENV_FILE" <<'PY'
+import os
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1]).expanduser()
+if not path.exists():
+    raise SystemExit(1)
+
+pattern = re.compile(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
+values = {}
+for raw in path.read_text(encoding="utf-8").splitlines():
+    line = raw.strip()
+    if not line or line.startswith("#"):
+        continue
+    match = pattern.match(line)
+    if not match:
+        continue
+    key, value = match.groups()
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1]
+    values[key] = value
+
+value = values.get("MNEME_HOME") or values.get("HERMES_HOME")
+if not value:
+    raise SystemExit(1)
+
+expanded = Path(os.path.expandvars(os.path.expanduser(value)))
+if not expanded.is_absolute():
+    expanded = path.parent / expanded
+print(expanded)
+PY
+}
+
+ensure_project_env() {
+  ENV_FILE="$(abspath_under_root "$ENV_FILE")"
+  PROJECT_MEMORY_HOME="$(abspath_under_root "$PROJECT_MEMORY_HOME")"
+  mkdir -p "$(dirname "$ENV_FILE")"
+
+  if [ ! -f "$ENV_FILE" ]; then
+    printf '# Mneme project-scoped memory\nMNEME_HOME=%s\n' "$PROJECT_MEMORY_HOME" > "$ENV_FILE"
+    return 0
+  fi
+
+  if ! read_env_memory_home >/dev/null 2>&1; then
+    {
+      printf '\n# Mneme project-scoped memory\n'
+      printf 'MNEME_HOME=%s\n' "$PROJECT_MEMORY_HOME"
+    } >> "$ENV_FILE"
+  fi
+}
+
+apply_profile() {
+  case "$SETUP_PROFILE" in
+    global)
+      MEMORY_HOME="$GLOBAL_MEMORY_HOME"
+      MCP_COMMAND="$ROOT/.venv/bin/mneme-memory-mcp"
+      MCP_ARGS=()
+      MCP_STATIC_ENV=1
+      ;;
+    project)
+      ensure_project_env
+      MEMORY_HOME="$(read_env_memory_home)"
+      INSTALL_CONTINUITY=0
+      MCP_COMMAND="$ROOT/.venv/bin/mneme-memory-env-mcp"
+      MCP_ARGS=(--env-file "$ENV_FILE" --default-home "$PROJECT_MEMORY_HOME")
+      MCP_STATIC_ENV=0
+      ;;
+    server)
+      MEMORY_HOME="$GLOBAL_MEMORY_HOME"
+      CONFIGURE_CLIENTS=0
+      INSTALL_AGENT_PLUGINS=0
+      INSTALL_CONTINUITY=0
+      MCP_COMMAND="$ROOT/.venv/bin/mneme-memory-mcp"
+      MCP_ARGS=()
+      MCP_STATIC_ENV=1
+      ;;
+    *)
+      echo "Unknown profile: $SETUP_PROFILE" >&2
+      echo "Use --profile global, --profile project, or --profile server." >&2
+      exit 2
+      ;;
+  esac
+
+  export HERMES_HOME="$MEMORY_HOME"
+}
+
 configure_clients() {
   if [ "$CONFIGURE_CLIENTS" -ne 1 ]; then
     echo "==> Skipping Codex/Claude MCP configuration."
@@ -127,18 +326,30 @@ configure_clients() {
 
   if command -v codex >/dev/null 2>&1; then
     codex mcp remove mneme_memory >/dev/null 2>&1 || true
-    run_optional \
-      "Configuring Codex MCP server: mneme_memory" \
-      codex mcp add --env "HERMES_HOME=$HERMES_HOME" mneme_memory -- "$ROOT/.venv/bin/mneme-memory-mcp"
+    if [ "$MCP_STATIC_ENV" -eq 1 ]; then
+      run_optional \
+        "Configuring Codex MCP server: mneme_memory" \
+        codex mcp add --env "HERMES_HOME=$HERMES_HOME" mneme_memory -- "$MCP_COMMAND" "${MCP_ARGS[@]}"
+    else
+      run_optional \
+        "Configuring Codex MCP server: mneme_memory" \
+        codex mcp add mneme_memory -- "$MCP_COMMAND" "${MCP_ARGS[@]}"
+    fi
   else
     echo "==> Codex CLI not found; skipping Codex MCP configuration."
   fi
 
   if command -v claude >/dev/null 2>&1; then
     claude mcp remove mneme-memory >/dev/null 2>&1 || true
-    run_optional \
-      "Configuring Claude Code MCP server: mneme-memory" \
-      claude mcp add -s user mneme-memory -e "HERMES_HOME=$HERMES_HOME" -- "$ROOT/.venv/bin/mneme-memory-mcp"
+    if [ "$MCP_STATIC_ENV" -eq 1 ]; then
+      run_optional \
+        "Configuring Claude Code MCP server: mneme-memory" \
+        claude mcp add -s user mneme-memory -e "HERMES_HOME=$HERMES_HOME" -- "$MCP_COMMAND" "${MCP_ARGS[@]}"
+    else
+      run_optional \
+        "Configuring Claude Code MCP server: mneme-memory" \
+        claude mcp add -s user mneme-memory -- "$MCP_COMMAND" "${MCP_ARGS[@]}"
+    fi
   else
     echo "==> Claude CLI not found; skipping Claude MCP configuration."
   fi
@@ -190,9 +401,111 @@ install_continuity() {
     "$ROOT/.venv/bin/mneme-memory-continuity" install --memory-home "$HERMES_HOME" --bin-dir "$ROOT/.venv/bin"
 }
 
+print_manual_config() {
+  cat <<EOF
+
+==> Mneme agent mesh
+
+Selected profile: $SETUP_PROFILE
+
+The installer attempted to configure:
+
+EOF
+
+  if [ "$CONFIGURE_CLIENTS" -eq 1 ]; then
+    cat <<'EOF'
+- Mneme MCP in Codex and Claude Code
+EOF
+  else
+    cat <<'EOF'
+- Client MCP configuration skipped for this profile or flag set
+EOF
+  fi
+
+  if [ "$INSTALL_CONTINUITY" -eq 1 ]; then
+    cat <<'EOF'
+- Always-on shared memory instructions for fresh Codex and Claude chats
+- Claude SessionStart memory injection
+EOF
+  else
+    cat <<'EOF'
+- No global Claude/Codex memory instructions for this profile
+EOF
+  fi
+
+  if [ "$INSTALL_AGENT_PLUGINS" -eq 1 ]; then
+    cat <<'EOF'
+- OpenAI codex-plugin-cc in Claude Code for Claude -> Codex delegation
+- Ponytail in Codex and Claude Code for smaller, safer code generation
+EOF
+  fi
+
+  cat <<'EOF'
+
+If automatic client configuration was skipped or failed, add Mneme manually.
+EOF
+
+  if [ "$MCP_STATIC_ENV" -eq 1 ]; then
+    cat <<EOF
+
+Codex:
+
+[mcp_servers.mneme_memory]
+command = "$MCP_COMMAND"
+args = []
+startup_timeout_sec = 120
+
+[mcp_servers.mneme_memory.env]
+HERMES_HOME = "$HERMES_HOME"
+
+Claude Code:
+
+{
+  "mcpServers": {
+    "mneme-memory": {
+      "type": "stdio",
+      "command": "$MCP_COMMAND",
+      "args": [],
+      "env": {
+        "HERMES_HOME": "$HERMES_HOME"
+      }
+    }
+  }
+}
+EOF
+  else
+    cat <<EOF
+
+Codex:
+
+[mcp_servers.mneme_memory]
+command = "$MCP_COMMAND"
+args = ["--env-file", "$ENV_FILE", "--default-home", "$PROJECT_MEMORY_HOME"]
+startup_timeout_sec = 120
+
+Claude Code:
+
+{
+  "mcpServers": {
+    "mneme-memory": {
+      "type": "stdio",
+      "command": "$MCP_COMMAND",
+      "args": ["--env-file", "$ENV_FILE", "--default-home", "$PROJECT_MEMORY_HOME"]
+    }
+  }
+}
+EOF
+  fi
+
+  cat <<'EOF'
+
+Restart Codex and Claude Code after install so MCP servers and plugins reload.
+EOF
+}
+
 echo "==> Mneme Memory MCP"
 echo "repo: $ROOT"
-echo "memory home: $MEMORY_HOME"
+choose_profile
 
 if ! PYTHON_BIN="$(find_python)"; then
   echo "Python 3.10 or newer is required." >&2
@@ -200,6 +513,13 @@ if ! PYTHON_BIN="$(find_python)"; then
   exit 1
 fi
 
+apply_profile
+
+echo "profile: $SETUP_PROFILE"
+echo "memory home: $MEMORY_HOME"
+if [ "$SETUP_PROFILE" = "project" ]; then
+  echo "env file: $ENV_FILE"
+fi
 echo "python: $PYTHON_BIN"
 
 if ! HERMES_BIN="$(find_hermes)"; then
@@ -230,44 +550,4 @@ install_agent_plugins
 echo
 "$ROOT/.venv/bin/mneme-memory-doctor"
 
-cat <<EOF
-
-==> Mneme agent mesh
-
-The installer attempted to configure:
-
-- Mneme MCP in Codex and Claude Code
-- Always-on shared memory instructions for fresh Codex and Claude chats
-- Claude SessionStart memory injection
-- OpenAI codex-plugin-cc in Claude Code for Claude -> Codex delegation
-- Ponytail in Codex and Claude Code for smaller, safer code generation
-
-If automatic client configuration was skipped or failed, add Mneme manually.
-
-Codex:
-
-[mcp_servers.mneme_memory]
-command = "$ROOT/.venv/bin/mneme-memory-mcp"
-args = []
-startup_timeout_sec = 120
-
-[mcp_servers.mneme_memory.env]
-HERMES_HOME = "$HERMES_HOME"
-
-Claude Code:
-
-{
-  "mcpServers": {
-    "mneme-memory": {
-      "type": "stdio",
-      "command": "$ROOT/.venv/bin/mneme-memory-mcp",
-      "args": [],
-      "env": {
-        "HERMES_HOME": "$HERMES_HOME"
-      }
-    }
-  }
-}
-
-Restart Codex and Claude Code after install so MCP servers and plugins reload.
-EOF
+print_manual_config

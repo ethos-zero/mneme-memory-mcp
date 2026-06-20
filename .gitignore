@@ -8,3 +8,7 @@ build/
 *.egg-info/
 memory_store.db*
 tmp/
+.env
+.env.*
+!.env.example
+.mneme/

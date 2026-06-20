@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mneme-memory-mcp"
-version = "0.3.0"
+version = "0.4.0"
 description = "A local MCP memory and agent-mesh bridge for Claude, Codex, Hermes, and other agents."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,6 +20,7 @@ dependencies = [
 [project.scripts]
 mneme-memory = "mneme_memory_mcp.cli:main"
 mneme-memory-continuity = "mneme_memory_mcp.continuity:main"
+mneme-memory-env-mcp = "mneme_memory_mcp.env_launcher:main"
 mneme-memory-mcp = "mneme_memory_mcp.server:main"
 mneme-memory-doctor = "mneme_memory_mcp.doctor:main"
 

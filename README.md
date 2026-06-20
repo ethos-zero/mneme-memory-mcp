@@ -48,6 +48,16 @@ cd mneme-memory-mcp
 ./scripts/install.sh
 ```
 
+When run in an interactive terminal, the installer asks which memory profile you want:
+
+| Profile | Best For | Memory Home | Global Claude/Codex Instructions |
+| --- | --- | --- | --- |
+| `global` | A personal machine where every fresh Claude/Codex chat should share memory | `~/.hermes` by default | Yes |
+| `project` | A cloned repo, shared setup, or isolated workspace | `.env` value, defaulting to `./.mneme` | No |
+| `server` | Manual wiring or cautious evaluation | Your existing env/defaults | No |
+
+Non-interactive installs keep the previous default and use `global`.
+
 The installer:
 
 - checks for `hermes`
@@ -61,6 +71,14 @@ The installer:
 - installs [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) into Claude Code for Claude -> Codex delegation
 - installs [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) into Codex and Claude Code for minimal, safer implementation behavior
 - prints manual fallback config
+
+Choose a profile directly:
+
+```bash
+./scripts/install.sh --profile global
+./scripts/install.sh --profile project
+./scripts/install.sh --profile server
+```
 
 To skip Hermes installation:
 
@@ -78,6 +96,20 @@ To keep MCP/plugin setup but skip global memory instructions:
 
 ```bash
 ./scripts/install.sh --no-continuity
+```
+
+For a project/env-scoped setup using a specific env file:
+
+```bash
+./scripts/install.sh --profile project --env-file /path/to/.env
+```
+
+You can start from `.env.example`.
+
+If that file has no `MNEME_HOME` or `HERMES_HOME`, Mneme adds:
+
+```env
+MNEME_HOME=/absolute/path/to/mneme-memory-mcp/.mneme
 ```
 
 Check the setup:
@@ -141,6 +173,7 @@ Mneme also installs two local CLI commands:
 
 - `mneme-memory` - read, search, list, and add shared memory without an MCP client
 - `mneme-memory-continuity` - install or inspect always-on Claude/Codex memory continuity
+- `mneme-memory-env-mcp` - run the MCP server after loading memory settings from a `.env` file
 
 ## Manual Install
 
@@ -205,6 +238,8 @@ If you already have other `mcpServers`, merge the `mneme-memory` entry into the 
 
 ## Always-On Client Memory
 
+Always-on client memory is the `global` profile. It is ideal for one trusted personal machine, because every configured local Claude and Codex session is instructed to start from the same memory layer.
+
 The installer writes managed instruction blocks to:
 
 - `~/.codex/AGENTS.md`
@@ -221,6 +256,8 @@ and merges it into `~/.claude/settings.json` under `SessionStart`.
 The MCP server is still the source of truth for search and writes; the global instructions and hook make the high-signal memory summary visible immediately in fresh chats.
 
 Read the full behavior in [docs/always-on-memory.md](docs/always-on-memory.md).
+
+For repo-scoped memory, use `--profile project`. That profile configures MCP clients through `mneme-memory-env-mcp`, which reads `MNEME_HOME` or `HERMES_HOME` from `.env`, and it does not install global Claude/Codex memory instructions.
 
 ## Environment Variables
 
