@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "caduceus-memory": {
+      "type": "stdio",
+      "command": "/absolute/path/to/caduceus-memory-mcp/.venv/bin/caduceus-memory-mcp",
+      "args": [],
+      "env": {
+        "HERMES_HOME": "/Users/YOU/.hermes"
+      }
+    }
+  }
+}
