@@ -1,5 +1,7 @@
 # Caduceus Memory MCP
 
+![Caduceus Memory MCP hero artwork](assets/caduceus-hero.png)
+
 A local shared-memory MCP server for Claude, Codex, Hermes, and other MCP-aware agents.
 
 The goal is simple: one durable memory layer that every agent can read from and write to.
@@ -13,6 +15,10 @@ Hermes        ----/                         memories/ + memory_store.db
 ## Why Caduceus?
 
 Hermes carries messages. The caduceus is Hermes' staff. This project is the staff: the bridge that lets different agents carry the same memory forward.
+
+## Artwork
+
+The project artwork uses an original ultramarine-and-ivory engraving style: two agent forms, a shared ribbon between them, and a persistent memory layer above. It is meant to nod toward the mythic Hermes lineage without copying or implying affiliation with Hermes Agent, Nous Research, or any other project.
 
 ## What It Stores
 
