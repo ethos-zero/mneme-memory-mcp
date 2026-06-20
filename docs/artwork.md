@@ -20,6 +20,10 @@ These images are designed to explain the project visually: persistent memory, cr
 | --- | --- |
 | ![Agent Bridge](../assets/docs/agent-bridge.png) | ![MCP Tool Constellation](../assets/docs/mcp-tool-constellation.png) |
 
+| Ponytail Ladder | Less Code, Same Memory |
+| --- | --- |
+| ![Ponytail Ladder](../assets/docs/ponytail-ladder.png) | ![Less Code, Same Memory](../assets/docs/less-code-same-memory.png) |
+
 | Persistent Topology |
 | --- |
 | ![Persistent Topology](../assets/docs/persistent-topology.png) |
