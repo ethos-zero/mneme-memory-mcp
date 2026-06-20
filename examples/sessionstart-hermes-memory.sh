@@ -16,6 +16,6 @@ done
 [ -n "$out" ] || exit 0
 
 printf '## Shared persistent memory\n'
-printf '_Source: %s. For deeper recall, use the caduceus-memory MCP tools._\n' "$MEM_DIR"
+printf '_Source: %s. For deeper recall, use the mneme-memory MCP tools._\n' "$MEM_DIR"
 printf '%s\n' "$out"
 

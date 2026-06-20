@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from caduceus_memory_mcp.store import SharedMemoryStore
+from mneme_memory_mcp.store import SharedMemoryStore
 
 
 class SharedMemoryStoreTest(unittest.TestCase):

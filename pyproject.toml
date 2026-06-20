@@ -3,7 +3,7 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "caduceus-memory-mcp"
+name = "mneme-memory-mcp"
 version = "0.1.0"
 description = "A local MCP memory bridge for Claude, Codex, Hermes, and other agents."
 readme = "README.md"
@@ -18,8 +18,8 @@ dependencies = [
 ]
 
 [project.scripts]
-caduceus-memory-mcp = "caduceus_memory_mcp.server:main"
+mneme-memory-mcp = "mneme_memory_mcp.server:main"
+mneme-memory-doctor = "mneme_memory_mcp.doctor:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/caduceus_memory_mcp"]
-
+packages = ["src/mneme_memory_mcp"]

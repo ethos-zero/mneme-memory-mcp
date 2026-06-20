@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "caduceus-memory": {
+    "mneme-memory": {
       "type": "stdio",
-      "command": "/absolute/path/to/caduceus-memory-mcp/.venv/bin/caduceus-memory-mcp",
+      "command": "/absolute/path/to/mneme-memory-mcp/.venv/bin/mneme-memory-mcp",
       "args": [],
       "env": {
         "HERMES_HOME": "/Users/YOU/.hermes"

@@ -1,28 +1,81 @@
-# Caduceus Memory MCP
+# Mneme Memory MCP
 
-![Caduceus Memory MCP hero artwork](assets/caduceus-hero.png)
+The memory that grows with every agent.
 
-A local shared-memory MCP server for Claude, Codex, Hermes, and other MCP-aware agents.
+![Mneme Memory MCP hero artwork](assets/mneme-hero.png)
 
-The goal is simple: one durable memory layer that every agent can read from and write to.
+Mneme is a local-first shared memory layer for Claude, Codex, Hermes, and any MCP-aware agent you trust.
+
+It gives your agents one durable mind: preferences, project state, tool setup, decisions, and long-running context that survive new chats and new clients.
 
 ```text
-Claude Code  ----\
-Codex         ----- caduceus-memory-mcp ---- ~/.hermes
-Hermes        ----/                         memories/ + memory_store.db
+Claude Code  -----\
+Codex          ----- mneme-memory-mcp ----- ~/.hermes
+Hermes Agent  -----/                          memories/ + memory_store.db
 ```
 
-## Why Caduceus?
+## What It Does
 
-Hermes carries messages. The caduceus is Hermes' staff. This project is the staff: the bridge that lets different agents carry the same memory forward.
+- Remembers across chats, agents, and clients
+- Shares one Hermes-compatible memory home
+- Stores human-readable memory in Markdown
+- Stores searchable facts in SQLite FTS
+- Exposes memory through MCP tools
+- Installs beside Hermes Agent, and can bootstrap Hermes when it is missing
+
+## Why Mneme?
+
+Mneme means memory. Hermes carries messages; Mneme keeps them from disappearing. This project is the bridge that lets every connected agent return to the same remembered context.
 
 ## Artwork
 
 The project artwork uses an original ultramarine-and-ivory engraving style: two agent forms, a shared ribbon between them, and a persistent memory layer above. It is meant to nod toward the mythic Hermes lineage without copying or implying affiliation with Hermes Agent, Nous Research, or any other project.
 
-## What It Stores
+Additional documentation artwork lives in [docs/artwork.md](docs/artwork.md).
 
-Caduceus stores memory in two local forms:
+## Quick Install
+
+```bash
+git clone https://github.com/ethos-zero/mneme-memory-mcp.git
+cd mneme-memory-mcp
+./scripts/install.sh
+```
+
+The installer:
+
+- checks for `hermes`
+- installs Hermes Agent with the official Hermes installer if missing
+- creates a local `.venv`
+- installs `mneme-memory-mcp`
+- creates `~/.hermes/memories`
+- prints ready-to-paste Codex and Claude MCP config
+
+To skip Hermes installation:
+
+```bash
+./scripts/install.sh --no-hermes-install
+```
+
+Check the setup:
+
+```bash
+.venv/bin/mneme-memory-doctor
+```
+
+## Hermes Pairing
+
+Mneme is designed to sit next to [Hermes Agent](https://github.com/NousResearch/hermes-agent), the agent that grows with you. Hermes provides the agent runtime and desktop experience; Mneme provides a small shared-memory MCP bridge that other agents can use directly.
+
+For the full setup, install both:
+
+- Hermes Agent for the local agent environment
+- Mneme Memory MCP for shared memory across Codex, Claude Code, Hermes, and other MCP clients
+
+More details live in [docs/hermes.md](docs/hermes.md).
+
+## Memory Store
+
+Mneme stores memory in two local forms:
 
 - Markdown files for always-on human-readable memory:
   - `~/.hermes/memories/USER.md`
@@ -30,7 +83,7 @@ Caduceus stores memory in two local forms:
 - SQLite FTS fact store for searchable recall:
   - `~/.hermes/memory_store.db`
 
-It is designed to sit next to Hermes, but it does not require Hermes Agent to be running.
+It is designed to sit next to Hermes, but the MCP memory server does not require Hermes Agent to be running.
 
 ## Tools
 
@@ -43,11 +96,11 @@ The MCP server exposes:
 - `memory_update` - update a fact by id
 - `memory_remove` - remove a fact by id
 
-## Install From A Clone
+## Manual Install
 
 ```bash
-git clone https://github.com/ethos-zero/caduceus-memory-mcp.git
-cd caduceus-memory-mcp
+git clone https://github.com/ethos-zero/mneme-memory-mcp.git
+cd mneme-memory-mcp
 python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
@@ -55,7 +108,7 @@ python3 -m venv .venv
 Your server command will be:
 
 ```bash
-/absolute/path/to/caduceus-memory-mcp/.venv/bin/caduceus-memory-mcp
+/absolute/path/to/mneme-memory-mcp/.venv/bin/mneme-memory-mcp
 ```
 
 ## Configure Codex
@@ -63,16 +116,25 @@ Your server command will be:
 Add this to `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.caduceus_memory]
-command = "/absolute/path/to/caduceus-memory-mcp/.venv/bin/caduceus-memory-mcp"
+[mcp_servers.mneme_memory]
+command = "/absolute/path/to/mneme-memory-mcp/.venv/bin/mneme-memory-mcp"
 args = []
 startup_timeout_sec = 120
 
-[mcp_servers.caduceus_memory.env]
+[mcp_servers.mneme_memory.env]
 HERMES_HOME = "/Users/YOU/.hermes"
 ```
 
 Restart Codex or open a fresh session so it reloads MCP servers.
+
+To also expose Hermes Agent itself to Codex, add a Hermes MCP server using the `hermes` command installed by Hermes Agent:
+
+```toml
+[mcp_servers.hermes]
+command = "hermes"
+args = ["mcp", "serve", "--accept-hooks"]
+startup_timeout_sec = 120
+```
 
 ## Configure Claude Code
 
@@ -81,9 +143,9 @@ Add this to `~/.claude.json`:
 ```json
 {
   "mcpServers": {
-    "caduceus-memory": {
+    "mneme-memory": {
       "type": "stdio",
-      "command": "/absolute/path/to/caduceus-memory-mcp/.venv/bin/caduceus-memory-mcp",
+      "command": "/absolute/path/to/mneme-memory-mcp/.venv/bin/mneme-memory-mcp",
       "args": [],
       "env": {
         "HERMES_HOME": "/Users/YOU/.hermes"
@@ -93,7 +155,7 @@ Add this to `~/.claude.json`:
 }
 ```
 
-If you already have other `mcpServers`, merge the `caduceus-memory` entry into the existing object.
+If you already have other `mcpServers`, merge the `mneme-memory` entry into the existing object.
 
 ## Optional Claude SessionStart Hook
 
@@ -119,14 +181,14 @@ Defaults are chosen for Hermes compatibility:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CADUCEUS_HOME` | unset | Primary Caduceus home override |
+| `MNEME_HOME` | unset | Primary Mneme home override |
 | `HERMES_HOME` | `~/.hermes` | Hermes-compatible memory home |
-| `CADUCEUS_MEMORY_DIR` | `$HOME/memories` under resolved home | Markdown memory directory |
-| `CADUCEUS_DB_PATH` | `$HOME/memory_store.db` under resolved home | SQLite fact store path |
+| `MNEME_MEMORY_DIR` | `$HOME/memories` under resolved home | Markdown memory directory |
+| `MNEME_DB_PATH` | `$HOME/memory_store.db` under resolved home | SQLite fact store path |
 
 Priority for home is:
 
-1. `CADUCEUS_HOME`
+1. `MNEME_HOME`
 2. `HERMES_HOME`
 3. `~/.hermes`
 
@@ -139,21 +201,9 @@ python -m unittest discover -s tests -v
 To test through an MCP client, use any MCP-compatible inspector/client and run:
 
 ```bash
-caduceus-memory-mcp
+mneme-memory-mcp
 ```
 
 ## Privacy
 
 This server is local-first. It does not send memory anywhere by itself. Any agent you connect to it can read or write the configured local memory, so only connect agents you trust.
-
-## Name Ideas
-
-If you want a different name before publishing:
-
-- `caduceus-memory-mcp` - Hermes' staff; strong bridge metaphor
-- `mneme-mcp` - Greek memory spirit; short and direct
-- `mnemosyne-mcp` - Greek goddess of memory; beautiful but harder to type
-- `iris-memory-mcp` - divine messenger bridge; lighter than Hermes
-- `atlas-memory-mcp` - carries the world of context
-- `aegis-memory-mcp` - protective shared memory layer
-- `threadkeeper-mcp` - less mythic, very clear

@@ -6,7 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .store import SharedMemoryStore, format_facts
 
-mcp = FastMCP("caduceus-memory")
+mcp = FastMCP("mneme-memory")
 
 
 def store() -> SharedMemoryStore:

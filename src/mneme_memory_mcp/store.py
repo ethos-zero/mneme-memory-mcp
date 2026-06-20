@@ -15,24 +15,28 @@ def resolve_home() -> Path:
     """Resolve the shared memory home directory.
 
     Environment priority:
-    1. CADUCEUS_HOME
+    1. MNEME_HOME
     2. HERMES_HOME
     3. ~/.hermes
     """
 
-    raw = os.environ.get("CADUCEUS_HOME") or os.environ.get("HERMES_HOME") or "~/.hermes"
+    raw = (
+        os.environ.get("MNEME_HOME")
+        or os.environ.get("HERMES_HOME")
+        or "~/.hermes"
+    )
     return Path(raw).expanduser()
 
 
 def resolve_memory_dir(home: Path | None = None) -> Path:
-    raw = os.environ.get("CADUCEUS_MEMORY_DIR")
+    raw = os.environ.get("MNEME_MEMORY_DIR")
     if raw:
         return Path(raw).expanduser()
     return (home or resolve_home()) / "memories"
 
 
 def resolve_db_path(home: Path | None = None) -> Path:
-    raw = os.environ.get("CADUCEUS_DB_PATH")
+    raw = os.environ.get("MNEME_DB_PATH")
     if raw:
         return Path(raw).expanduser()
     return (home or resolve_home()) / "memory_store.db"
@@ -345,4 +349,3 @@ def _fts_query(query: str) -> str:
     if not terms:
         return query
     return " ".join(f'"{term}"' for term in terms)
-

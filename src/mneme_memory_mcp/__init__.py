@@ -1,4 +1,4 @@
-"""Caduceus Memory MCP."""
+"""Mneme Memory MCP."""
 
 __all__ = ["__version__"]
 
