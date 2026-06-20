@@ -4,14 +4,17 @@ The memory that grows with every agent.
 
 ![Mneme Memory MCP hero artwork](assets/mneme-hero.png)
 
-Mneme is a local-first shared memory layer for Claude, Codex, Hermes, and any MCP-aware agent you trust.
+Mneme is a local-first shared memory and agent-mesh layer for Claude, Codex, Hermes, and any MCP-aware agent you trust.
 
-It gives your agents one durable mind: preferences, project state, tool setup, decisions, and long-running context that survive new chats and new clients.
+It gives your agents one durable mind and one shared bridge: preferences, project state, tool setup, decisions, long-running context, and peer-agent delegation that survive new chats and new clients.
 
 ```text
-Claude Code  -----\
-Codex          ----- mneme-memory-mcp ----- ~/.hermes
-Hermes Agent  -----/                          memories/ + memory_store.db
+Claude Code  <---->  mneme-memory-mcp  <---->  Codex
+       \                 |   |                  /
+        \                |   |                 /
+         \-------->  ~/.hermes memory  <------/
+                         |
+                    Hermes Agent
 ```
 
 ## What It Does
@@ -22,6 +25,8 @@ Hermes Agent  -----/                          memories/ + memory_store.db
 - Stores searchable facts in SQLite FTS
 - Exposes memory through MCP tools
 - Installs beside Hermes Agent, and can bootstrap Hermes when it is missing
+- Wires Claude and Codex together through MCP and the OpenAI Claude-to-Codex plugin
+- Installs Ponytail for smaller, safer code-generation behavior in both clients
 
 ## Why Mneme?
 
@@ -48,7 +53,10 @@ The installer:
 - creates a local `.venv`
 - installs `mneme-memory-mcp`
 - creates `~/.hermes/memories`
-- prints ready-to-paste Codex and Claude MCP config
+- configures Mneme as an MCP server in Codex and Claude Code when those CLIs are present
+- installs [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) into Claude Code for Claude -> Codex delegation
+- installs [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) into Codex and Claude Code for minimal, safer implementation behavior
+- prints manual fallback config
 
 To skip Hermes installation:
 
@@ -56,11 +64,30 @@ To skip Hermes installation:
 ./scripts/install.sh --no-hermes-install
 ```
 
+For memory-only setup without client/plugin changes:
+
+```bash
+./scripts/install.sh --memory-only
+```
+
 Check the setup:
 
 ```bash
 .venv/bin/mneme-memory-doctor
 ```
+
+## Agent Mesh
+
+![Mneme agent bridge artwork](assets/docs/agent-bridge.png)
+
+Mneme makes Claude and Codex meet in the same memory field.
+
+- Claude -> Codex: installed through OpenAI's `codex-plugin-cc` Claude Code plugin.
+- Codex -> Claude: exposed through Mneme's `delegate_to_claude` MCP tool.
+- Shared memory: both clients use the same Mneme MCP server pointed at the same Hermes-compatible memory home.
+- Efficient implementation mode: Ponytail is installed for both clients when available.
+
+More details live in [docs/agent-mesh.md](docs/agent-mesh.md) and [docs/ponytail.md](docs/ponytail.md).
 
 ## Hermes Pairing
 
@@ -95,6 +122,9 @@ The MCP server exposes:
 - `memory_add` - add a durable memory
 - `memory_update` - update a fact by id
 - `memory_remove` - remove a fact by id
+- `agent_bridge_status` - check local Claude, Codex, and Node readiness
+- `delegate_to_claude` - ask Claude Code to handle a one-shot task with Mneme memory injected
+- `delegate_to_codex` - ask Codex to handle a one-shot task with Mneme memory injected
 
 ## Manual Install
 

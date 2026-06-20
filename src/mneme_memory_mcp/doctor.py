@@ -28,6 +28,10 @@ def find_hermes() -> str | None:
     return str(existing) if existing else None
 
 
+def _which(command: str) -> str:
+    return shutil.which(command) or "missing"
+
+
 def _version(command: str) -> str:
     try:
         result = subprocess.run(
@@ -59,6 +63,9 @@ def status_lines() -> list[str]:
         f"USER.md: {'ok' if (memory_dir / 'USER.md').exists() else 'missing'}",
         f"MEMORY.md: {'ok' if (memory_dir / 'MEMORY.md').exists() else 'missing'}",
         f"SQLite store: {'ok' if db_path.exists() else 'will be created on first write'}",
+        f"Claude CLI: {_which('claude')}",
+        f"Codex CLI: {_which('codex')}",
+        f"Node: {_which('node')}",
     ]
 
     if hermes:

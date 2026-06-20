@@ -4,6 +4,7 @@ from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
+from .bridge import bridge_status, delegate_to_claude as run_claude, delegate_to_codex as run_codex
 from .store import SharedMemoryStore, format_facts
 
 mcp = FastMCP("mneme-memory")
@@ -82,10 +83,67 @@ def memory_remove(fact_id: int) -> str:
     return "removed" if ok else f"fact {fact_id} not found"
 
 
+@mcp.tool()
+def agent_bridge_status() -> str:
+    """Show whether local Claude, Codex, and Node bridge dependencies are available."""
+
+    return bridge_status()
+
+
+@mcp.tool()
+def delegate_to_claude(
+    prompt: str,
+    cwd: str | None = None,
+    model: str | None = None,
+    permission_mode: str = "default",
+    timeout_seconds: int = 600,
+) -> str:
+    """Ask Claude Code to handle a one-shot task with Mneme memory injected.
+
+    Use this from Codex when a second Claude perspective would help.
+    """
+
+    try:
+        return run_claude(
+            prompt=prompt,
+            cwd=cwd,
+            model=model,
+            permission_mode=permission_mode,
+            timeout_seconds=timeout_seconds,
+        ).format()
+    except (RuntimeError, ValueError) as exc:
+        return f"error: {exc}"
+
+
+@mcp.tool()
+def delegate_to_codex(
+    prompt: str,
+    cwd: str | None = None,
+    model: str | None = None,
+    sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write",
+    timeout_seconds: int = 600,
+) -> str:
+    """Ask Codex to handle a one-shot task with Mneme memory injected.
+
+    Use this from Claude when the OpenAI codex-plugin-cc plugin is not enough
+    or when you want the delegation to travel through Mneme's shared memory.
+    """
+
+    try:
+        return run_codex(
+            prompt=prompt,
+            cwd=cwd,
+            model=model,
+            sandbox=sandbox,
+            timeout_seconds=timeout_seconds,
+        ).format()
+    except (RuntimeError, ValueError) as exc:
+        return f"error: {exc}"
+
+
 def main() -> None:
     mcp.run()
 
 
 if __name__ == "__main__":
     main()
-
