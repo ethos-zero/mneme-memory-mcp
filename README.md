@@ -169,7 +169,7 @@ The MCP server exposes:
 - `delegate_to_claude` - ask Claude Code to handle a one-shot task with Mneme memory injected
 - `delegate_to_codex` - ask Codex to handle a one-shot task with Mneme memory injected
 
-Mneme also installs two local CLI commands:
+Mneme also installs these local CLI commands:
 
 - `mneme-memory` - read, search, list, and add shared memory without an MCP client
 - `mneme-memory-continuity` - install or inspect always-on Claude/Codex memory continuity

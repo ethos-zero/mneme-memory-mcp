@@ -136,7 +136,7 @@ while [ "$#" -gt 0 ]; do
       exit 0
       ;;
     *)
-      echo "Unknown argument: $arg" >&2
+      echo "Unknown argument: $1" >&2
       usage >&2
       exit 2
       ;;
@@ -329,11 +329,11 @@ configure_clients() {
     if [ "$MCP_STATIC_ENV" -eq 1 ]; then
       run_optional \
         "Configuring Codex MCP server: mneme_memory" \
-        codex mcp add --env "HERMES_HOME=$HERMES_HOME" mneme_memory -- "$MCP_COMMAND" "${MCP_ARGS[@]}"
+        codex mcp add --env "HERMES_HOME=$HERMES_HOME" mneme_memory -- "$MCP_COMMAND" ${MCP_ARGS[@]+"${MCP_ARGS[@]}"}
     else
       run_optional \
         "Configuring Codex MCP server: mneme_memory" \
-        codex mcp add mneme_memory -- "$MCP_COMMAND" "${MCP_ARGS[@]}"
+        codex mcp add mneme_memory -- "$MCP_COMMAND" ${MCP_ARGS[@]+"${MCP_ARGS[@]}"}
     fi
   else
     echo "==> Codex CLI not found; skipping Codex MCP configuration."
@@ -344,11 +344,11 @@ configure_clients() {
     if [ "$MCP_STATIC_ENV" -eq 1 ]; then
       run_optional \
         "Configuring Claude Code MCP server: mneme-memory" \
-        claude mcp add -s user mneme-memory -e "HERMES_HOME=$HERMES_HOME" -- "$MCP_COMMAND" "${MCP_ARGS[@]}"
+        claude mcp add -s user mneme-memory -e "HERMES_HOME=$HERMES_HOME" -- "$MCP_COMMAND" ${MCP_ARGS[@]+"${MCP_ARGS[@]}"}
     else
       run_optional \
         "Configuring Claude Code MCP server: mneme-memory" \
-        claude mcp add -s user mneme-memory -- "$MCP_COMMAND" "${MCP_ARGS[@]}"
+        claude mcp add -s user mneme-memory -- "$MCP_COMMAND" ${MCP_ARGS[@]+"${MCP_ARGS[@]}"}
     fi
   else
     echo "==> Claude CLI not found; skipping Claude MCP configuration."
