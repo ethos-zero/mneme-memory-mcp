@@ -74,8 +74,12 @@ def install_continuity(paths: ContinuityPaths | None = None) -> ContinuityStatus
 
     upsert_managed_block(paths.codex_agents, codex_block(paths))
     upsert_managed_block(paths.claude_md, claude_block(paths))
-    install_claude_hook(paths)
-    merge_claude_settings(paths.claude_settings, paths.claude_hook)
+    # ponytail: the SessionStart auto-inject hook is a bash script, so install it
+    # only on POSIX. On Windows the managed AGENTS.md/CLAUDE.md blocks plus the
+    # Mneme MCP tools still provide continuity; the hook is a bonus layer.
+    if os.name != "nt":
+        install_claude_hook(paths)
+        merge_claude_settings(paths.claude_settings, paths.claude_hook)
     return continuity_status(paths)
 
 

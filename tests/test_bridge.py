@@ -22,6 +22,7 @@ print("args=" + repr(sys.argv[1:]))
 """
 
 
+@unittest.skipIf(os.name == "nt", "fake-binary shebang trick is POSIX-only; bridge code itself is cross-platform")
 class AgentBridgeTest(unittest.TestCase):
     def make_fake_bin(self, root: Path, name: str) -> None:
         path = root / name

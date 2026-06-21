@@ -38,7 +38,14 @@ Mneme means memory. Hermes carries messages; Mneme keeps them from disappearing.
 
 The project artwork uses an original ultramarine-and-ivory engraving style: two agent forms, a shared ribbon between them, and a persistent memory layer above. It is meant to nod toward the mythic Hermes lineage without copying or implying affiliation with Hermes Agent, Nous Research, or any other project.
 
-Additional documentation artwork lives in [docs/artwork.md](docs/artwork.md).
+## Platform support
+
+The Mneme package (MCP server, memory tools, and CLIs) is pure Python and runs on macOS, Linux, and Windows.
+
+- **macOS / Linux:** use the one-command installer below (`./scripts/install.sh` is bash).
+- **Windows:** bash is not native, so use the [Manual Install](#manual-install) plus [Configure Codex](#configure-codex) and [Configure Claude Code](#configure-claude-code) steps (all cross-platform), or run the installer under WSL or Git Bash.
+
+Hermes auto-install and the Claude `SessionStart` memory hook are macOS/Linux only. On Windows, continuity still works through the managed `AGENTS.md`/`CLAUDE.md` instructions and the Mneme MCP tools.
 
 ## Quick Install
 
@@ -291,3 +298,5 @@ mneme-memory-mcp
 ## Privacy
 
 This server is local-first. It does not send memory anywhere by itself. Any agent you connect to it can read or write the configured local memory, so only connect agents you trust.
+
+The `delegate_to_claude` and `delegate_to_codex` tools run the other CLI on your machine non-interactively. `delegate_to_codex` uses Codex's `workspace-write` sandbox with approvals disabled (and can be set to `danger-full-access`), so it can change files in the working directory on its own. Treat them like any autonomous agent and enable them only for directories and tasks you trust.
