@@ -1,18 +1,12 @@
 # Ponytail Integration
 
-![Mneme MCP tool constellation](../assets/docs/mcp-tool-constellation.png)
-
 Mneme's installer integrates [Ponytail](https://github.com/DietrichGebert/ponytail) as the code-efficiency layer for Claude Code and Codex.
 
 Ponytail is not vendored into Mneme. It remains an upstream plugin, installed from its own marketplace so users receive its current skills, commands, and lifecycle hooks.
 
 ## Visual Idea
 
-![Ponytail Ladder](../assets/docs/ponytail-ladder.png)
-
 Ponytail is the ladder Mneme gives the agent loop before it writes code: skip what does not need to exist, use the platform when it already solves the problem, and leave one clean line where a pile of scaffolding wanted to grow.
-
-![Less Code, Same Memory](../assets/docs/less-code-same-memory.png)
 
 Claude and Codex still meet at the same memory layer. Ponytail keeps that loop from turning every task into an architecture ceremony.
 

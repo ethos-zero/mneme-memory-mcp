@@ -1,7 +1,5 @@
 # Always-On Memory
 
-![Mneme cross-chat continuity](../assets/docs/cross-chat-continuity.png)
-
 Mneme can run in global mode or project/env-scoped mode.
 
 Global mode is meant to make every configured agent answer from the same remembered ground. Project/env mode is meant to keep memory isolated to a repo or environment file.

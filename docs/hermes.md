@@ -1,7 +1,5 @@
 # Hermes Pairing
 
-![Mneme local-first store](../assets/docs/local-first-store.png)
-
 Mneme is built for the Hermes memory shape.
 
 Hermes Agent gives you the local agent runtime. Mneme gives Claude, Codex, Hermes, and other MCP clients a small shared-memory server pointed at the same durable home.
@@ -101,5 +99,3 @@ Hermes is the local agent environment.
 Mneme is the memory bridge.
 
 Together, they give every connected agent one persistent layer to remember through.
-
-![Mneme recall search](../assets/docs/recall-search.png)

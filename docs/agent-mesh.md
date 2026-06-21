@@ -54,8 +54,6 @@ The delegated Claude call receives the current Mneme memory summary, so it start
 
 ## Shared Memory
 
-![Mneme cross-chat continuity](../assets/docs/cross-chat-continuity.png)
-
 Both clients point at the same server command:
 
 ```bash
