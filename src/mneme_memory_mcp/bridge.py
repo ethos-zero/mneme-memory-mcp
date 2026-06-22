@@ -32,10 +32,11 @@ class AgentRun:
             f"exit: {self.returncode}",
             f"command: {cmd}",
             "",
-            self.stdout.strip() or "(no stdout)",
+            (self.stdout or "").strip() or "(no stdout)",
         ]
-        if self.stderr.strip():
-            pieces.extend(["", "stderr:", self.stderr.strip()])
+        stderr = (self.stderr or "").strip()
+        if stderr:
+            pieces.extend(["", "stderr:", stderr])
         return "\n".join(pieces).strip()
 
 
@@ -168,6 +169,8 @@ def _run(agent: str, command: list[str], cwd: Path, timeout_seconds: int) -> Age
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdin=subprocess.DEVNULL,
             timeout=_bounded_timeout(timeout_seconds),
             check=False,

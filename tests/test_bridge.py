@@ -8,7 +8,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mneme_memory_mcp.bridge import bridge_status, delegate_to_claude, delegate_to_codex
+from mneme_memory_mcp.bridge import (
+    AgentRun,
+    bridge_status,
+    delegate_to_claude,
+    delegate_to_codex,
+)
 from mneme_memory_mcp.store import SharedMemoryStore
 
 
@@ -89,6 +94,21 @@ class AgentBridgeTest(unittest.TestCase):
         # Codex CLIs error out if --ask-for-approval is passed, so it must not be.
         self.assertNotIn("--ask-for-approval", result.stdout)
         self.assertIn("--skip-git-repo-check", result.stdout)
+
+    def test_format_tolerates_missing_streams(self) -> None:
+        # A crashed/undecodable reader thread can leave stdout/stderr as None;
+        # format() must not raise AttributeError on them.
+        run = AgentRun(
+            agent="codex",
+            command=["codex", "exec"],
+            cwd=Path("."),
+            returncode=0,
+            stdout=None,
+            stderr=None,
+        )
+        text = run.format()
+        self.assertIn("agent: codex", text)
+        self.assertIn("(no stdout)", text)
 
 
 if __name__ == "__main__":
