@@ -85,6 +85,10 @@ class AgentBridgeTest(unittest.TestCase):
         self.assertIn("FAKE_AGENT", result.stdout)
         self.assertIn("Another shared fact.", result.stdout)
         self.assertIn("read-only", result.stdout)
+        # `codex exec` is non-interactive (approval is always "never"); current
+        # Codex CLIs error out if --ask-for-approval is passed, so it must not be.
+        self.assertNotIn("--ask-for-approval", result.stdout)
+        self.assertIn("--skip-git-repo-check", result.stdout)
 
 
 if __name__ == "__main__":

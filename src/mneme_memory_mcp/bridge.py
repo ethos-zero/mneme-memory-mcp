@@ -97,8 +97,6 @@ def delegate_to_codex(
         str(workdir),
         "--sandbox",
         sandbox,
-        "--ask-for-approval",
-        "never",
         "--skip-git-repo-check",
         "--color",
         "never",
@@ -170,6 +168,7 @@ def _run(agent: str, command: list[str], cwd: Path, timeout_seconds: int) -> Age
             cwd=cwd,
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
             timeout=_bounded_timeout(timeout_seconds),
             check=False,
         )
