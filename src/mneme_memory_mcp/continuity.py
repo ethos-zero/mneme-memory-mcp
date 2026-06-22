@@ -648,10 +648,12 @@ def _claude_mcp_configured(paths: ContinuityPaths) -> bool:
     server = servers.get("mneme-memory")
     if not isinstance(server, dict):
         return False
-    return (
-        str(server.get("command") or "") == str(_python_executable(paths.bin_dir))
-        and "mneme_memory_mcp" in [str(arg) for arg in server.get("args", [])]
-    )
+    command = str(server.get("command") or "")
+    args = [str(arg) for arg in server.get("args", [])]
+    command_name = Path(command).name.lower()
+    if command == str(_python_executable(paths.bin_dir)):
+        return "mneme_memory_mcp" in args
+    return command_name in {"mneme-memory-mcp", "mneme-memory-mcp.exe"}
 
 
 def _console_script(bin_dir: Path, name: str) -> Path:

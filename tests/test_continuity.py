@@ -133,6 +133,32 @@ class ContinuityTest(unittest.TestCase):
         self.assertNotIn(MNEME_HOOK_NAME, settings_text)
         self.assertIn(MNEME_CAPTURE_HOOK_NAME, settings_text)
 
+    def test_claude_cli_managed_mcp_config_counts_as_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = self.make_paths(root)
+
+            install_continuity(paths)
+            paths.claude_user_config.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "mneme-memory": {
+                                "type": "stdio",
+                                "command": str(paths.bin_dir / "mneme-memory-mcp"),
+                                "args": [],
+                                "env": {"HERMES_HOME": str(paths.memory_home)},
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            status = continuity_status(paths)
+
+        self.assertTrue(status.claude_mcp_config)
+
 
 if __name__ == "__main__":
     unittest.main()

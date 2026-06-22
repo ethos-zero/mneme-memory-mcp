@@ -553,6 +553,7 @@ EOF
     cat <<'EOF'
 - Always-on shared memory instructions for fresh Codex and Claude chats
 - Claude SessionStart memory injection
+- Claude UserPromptSubmit per-prompt memory injection
 - Claude/Codex searchable conversation capture hooks
 EOF
   else
