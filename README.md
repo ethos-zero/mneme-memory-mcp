@@ -22,6 +22,7 @@ Claude Code  <---->  mneme-memory-mcp  <---->  Codex
 - Remembers across chats, agents, and clients
 - Installs always-on memory instructions for fresh Claude and Codex chats
 - Auto-injects Markdown memory into new Claude Code sessions
+- Automatically indexes local Claude and Codex conversation snippets into searchable memory
 - Shares one Hermes-compatible memory home
 - Stores human-readable memory in Markdown
 - Stores searchable facts in SQLite FTS
@@ -43,7 +44,7 @@ The Mneme package (MCP server, memory tools, and CLIs) is pure Python and runs o
 
 A dedicated native Windows setup path is planned so Mneme can offer first-class setup across macOS, Linux, and Windows.
 
-Hermes auto-install and the Claude `SessionStart` memory hook are macOS/Linux only. On Windows, continuity still works through the managed `AGENTS.md`/`CLAUDE.md` instructions and the Mneme MCP tools.
+Hermes auto-install and local client hooks are macOS/Linux only today. On Windows, continuity still works through the managed `AGENTS.md`/`CLAUDE.md` instructions and the Mneme MCP tools. A dedicated native Windows setup path is planned so global capture can be configured the same way there.
 
 ## Quick Install
 
@@ -72,6 +73,7 @@ The installer:
 - creates `~/.hermes/memories`
 - installs always-on Mneme instructions into global Claude and Codex guidance files
 - configures a Claude Code `SessionStart` hook that injects the shared Markdown memory into fresh sessions
+- configures Claude and Codex capture hooks that index recent local conversation snippets into Mneme search
 - configures Mneme as an MCP server in Codex and Claude Code when those CLIs are present
 - installs [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) into Claude Code for Claude -> Codex delegation
 - installs [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) into Codex and Claude Code for minimal, safer implementation behavior
@@ -137,8 +139,10 @@ Default installer paths:
 | Project memory profile | `~/.local/share/mneme-memory-mcp/projects/<repo-name>` |
 | Project env file | `<repo>/.env` unless `--env-file` is passed |
 | Codex global instructions | `~/.codex/AGENTS.md` |
+| Codex capture notify wrapper | `~/.codex/mneme-memory-notify.sh` |
 | Claude global instructions | `~/.claude/CLAUDE.md` |
 | Claude memory hook | `~/.claude/hooks/mneme-memory-sessionstart.sh` |
+| Claude capture hook | `~/.claude/hooks/mneme-memory-capture.sh` |
 
 The installer prints the exact `install dir`, `venv dir`, `memory home`, and `env file` paths it selected.
 
@@ -164,7 +168,7 @@ Mneme makes Claude and Codex meet in the same memory field.
 - Claude -> Codex: installed through OpenAI's `codex-plugin-cc` Claude Code plugin.
 - Codex -> Claude: exposed through Mneme's `delegate_to_claude` MCP tool.
 - Shared memory: both clients use the same Mneme MCP server pointed at the same Hermes-compatible memory home.
-- Always-on continuity: global Claude/Codex instructions and a Claude `SessionStart` hook make new chats consult shared memory before substantive work.
+- Always-on continuity: global Claude/Codex instructions, Claude startup memory injection, and local capture hooks make new chats consult shared memory and keep adding searchable context as work happens.
 - Efficient implementation mode: Ponytail is installed for both clients when available.
 
 More details live in [docs/agent-mesh.md](docs/agent-mesh.md), [docs/always-on-memory.md](docs/always-on-memory.md), and [docs/ponytail.md](docs/ponytail.md).
@@ -190,6 +194,8 @@ Mneme stores memory in two local forms:
 - SQLite FTS fact store for searchable recall:
   - `~/.hermes/memory_store.db`
 
+Automatic conversation captures are stored in SQLite as lower-trust `conversation` facts. They are searchable by Mneme but are not appended to `USER.md` or `MEMORY.md`, which keeps the always-loaded Markdown memory small and intentional.
+
 It is designed to sit next to Hermes, but the MCP memory server does not require Hermes Agent to be running.
 
 ## Tools
@@ -209,6 +215,7 @@ The MCP server exposes:
 Mneme also installs these local CLI commands:
 
 - `mneme-memory` - read, search, list, and add shared memory without an MCP client
+- `mneme-memory-capture` - index local Claude/Codex conversation transcripts into searchable memory
 - `mneme-memory-continuity` - install or inspect always-on Claude/Codex memory continuity
 - `mneme-memory-env-mcp` - run the MCP server after loading memory settings from a `.env` file
 

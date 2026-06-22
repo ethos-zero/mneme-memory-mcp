@@ -39,7 +39,7 @@ def memory_list(limit: int = 25) -> str:
 def memory_add(
     content: str,
     target: Literal["user", "memory"] = "memory",
-    category: Literal["user_pref", "project", "tool", "general"] = "general",
+    category: Literal["user_pref", "project", "tool", "general", "conversation"] = "general",
     tags: str = "",
 ) -> str:
     """Add a durable fact to shared memory.
@@ -59,7 +59,7 @@ def memory_add(
 def memory_update(
     fact_id: int,
     content: str | None = None,
-    category: Literal["user_pref", "project", "tool", "general"] | None = None,
+    category: Literal["user_pref", "project", "tool", "general", "conversation"] | None = None,
     tags: str | None = None,
     trust_score: float | None = None,
 ) -> str:

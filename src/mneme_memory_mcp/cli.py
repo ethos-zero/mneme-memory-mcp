@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add.add_argument(
         "--category",
-        choices=("user_pref", "project", "tool", "general"),
+        choices=("user_pref", "project", "tool", "general", "conversation"),
         default="general",
         help="Fact category.",
     )

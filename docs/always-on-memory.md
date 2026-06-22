@@ -4,14 +4,15 @@ Mneme can run in global mode or project/env-scoped mode.
 
 Global mode is meant to make every configured agent answer from the same remembered ground. Project/env mode is meant to keep memory isolated to a repo or environment file.
 
-The installer gives Claude Code and Codex a persistent memory habit in four layers:
+The installer gives Claude Code and Codex a persistent memory habit in five layers:
 
 1. Shared local memory files in `~/.hermes/memories`
 2. Shared searchable facts in `~/.hermes/memory_store.db`
 3. Mneme MCP tools in Claude and Codex
 4. Global client instructions that tell new chats to consult Mneme before substantive answers
+5. Local capture hooks that index recent Claude/Codex transcript snippets into searchable memory
 
-For Claude Code, Mneme adds a fifth layer: a `SessionStart` hook that prints the Markdown memory summary into every fresh Claude session.
+For Claude Code, Mneme also adds a `SessionStart` hook that prints the Markdown memory summary into every fresh Claude session.
 
 ## What Gets Installed
 
@@ -34,6 +35,7 @@ Claude also gets:
 
 ```text
 ~/.claude/hooks/mneme-memory-sessionstart.sh
+~/.claude/hooks/mneme-memory-capture.sh
 ```
 
 and a `SessionStart` hook entry in:
@@ -42,7 +44,17 @@ and a `SessionStart` hook entry in:
 ~/.claude/settings.json
 ```
 
+The capture hook is also installed into Claude Code `Stop` and `SessionEnd` hooks. Codex gets a small notify wrapper at:
+
+```text
+~/.codex/mneme-memory-notify.sh
+```
+
+The wrapper indexes recent Codex transcript snippets, then forwards to the previously configured notify command when one existed.
+
 If an existing compatible Hermes/Mneme memory hook is already present, Mneme keeps it and avoids adding a duplicate.
+
+Automatic captures go into SQLite as lower-trust `conversation` facts with `capture`, client, role, and session tags. They are searchable through `memory_search` and `mneme-memory search`, but they are not appended to `USER.md` or `MEMORY.md`.
 
 ## Project/Env-Scoped Memory
 
@@ -72,6 +84,8 @@ mneme-memory-env-mcp --env-file /path/to/.env --default-home /Users/YOU/.local/s
 
 That launcher loads the `.env` memory settings when the MCP server starts. It does not write to `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`, or Claude `SessionStart` hooks.
 
+Project/env-scoped mode intentionally does not install global capture hooks. Use it when a repo should have shared memory only while clients are configured to that repo's `.env`.
+
 ## The Memory-First Rule
 
 Fresh Claude and Codex chats should follow this order:
@@ -85,6 +99,7 @@ Fresh Claude and Codex chats should follow this order:
 mneme-memory summary
 mneme-memory search "query terms"
 mneme-memory add --target memory "durable fact"
+mneme-memory-capture all
 ```
 
 ## Doctor Check
@@ -105,14 +120,18 @@ Expected healthy output includes:
 
 ```text
 Codex always-on memory instructions: ok
+Codex automatic memory capture: ok
 Claude always-on memory instructions: ok
 Claude SessionStart memory hook file: ok
 Claude SessionStart memory hook configured: ok
+Claude automatic memory capture hook file: ok
+Claude Stop memory capture configured: ok
+Claude SessionEnd memory capture configured: ok
 ```
 
 ## Practical Guarantee
 
-Mneme can make the memory layer the default for configured Claude Code and Codex clients by installing global instructions, MCP servers, a CLI fallback, and the Claude startup hook.
+Mneme can make the memory layer the default for configured Claude Code and Codex clients by installing global instructions, MCP servers, a CLI fallback, startup memory injection, and local capture hooks.
 
 No package can force an unconfigured client, a client that ignores its global instructions, or a disconnected remote chat to read local files. But once the installer has run successfully on a machine, new local Claude Code and Codex chats have the shared memory layer wired in by default.
 

@@ -43,6 +43,22 @@ class SharedMemoryStoreTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(len(store.list()), 1)
 
+    def test_add_fact_can_skip_markdown(self) -> None:
+        store = self.make_store()
+
+        fact_id = store.add_fact(
+            "Captured transcript snippet about Buffer posting.",
+            category="conversation",
+            tags="capture,claude",
+            append_markdown=False,
+            trust_score=0.35,
+        )
+
+        self.assertEqual(fact_id, 1)
+        self.assertIn("Buffer posting", store.search("Buffer")[0].content)
+        self.assertEqual(store.search("Buffer")[0].trust_score, 0.35)
+        self.assertNotIn("Captured transcript snippet", store.summary())
+
     def test_update_and_remove(self) -> None:
         store = self.make_store()
         fact_id = store.add("Old fact.", target="memory")
@@ -58,4 +74,3 @@ class SharedMemoryStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

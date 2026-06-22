@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 MemoryTarget = Literal["user", "memory"]
-MemoryCategory = Literal["user_pref", "project", "tool", "general"]
+MemoryCategory = Literal["user_pref", "project", "tool", "general", "conversation"]
 
 
 def resolve_home() -> Path:
@@ -109,13 +109,31 @@ class SharedMemoryStore:
         category: MemoryCategory = "general",
         tags: str = "",
     ) -> int:
+        return self.add_fact(
+            content=content,
+            target=target,
+            category=category,
+            tags=tags,
+            append_markdown=True,
+        )
+
+    def add_fact(
+        self,
+        content: str,
+        target: MemoryTarget = "memory",
+        category: MemoryCategory = "general",
+        tags: str = "",
+        append_markdown: bool = False,
+        trust_score: float = 0.65,
+    ) -> int:
         content = _normalize_content(content)
         if not content:
             raise ValueError("content must not be empty")
 
         self.ensure()
-        self._append_markdown(target, content)
-        return self._insert_fact(content, category, tags)
+        if append_markdown:
+            self._append_markdown(target, content)
+        return self._insert_fact(content, category, tags, trust_score=trust_score)
 
     def list(self, limit: int = 25) -> list[Fact]:
         self.ensure()
@@ -227,15 +245,21 @@ class SharedMemoryStore:
             ).fetchone()
         return _row_to_fact(row) if row else None
 
-    def _insert_fact(self, content: str, category: str, tags: str) -> int:
+    def _insert_fact(
+        self,
+        content: str,
+        category: str,
+        tags: str,
+        trust_score: float = 0.65,
+    ) -> int:
         with self.connect() as conn:
             try:
                 cur = conn.execute(
                     """
                     INSERT INTO facts (content, category, tags, trust_score)
-                    VALUES (?, ?, ?, 0.65)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    (content, category, tags),
+                    (content, category, tags, max(0.0, min(1.0, float(trust_score)))),
                 )
                 conn.commit()
                 return int(cur.lastrowid)

@@ -38,7 +38,7 @@ profile.
 
 Setup profiles:
   global   Machine-wide persistent memory in ~/.hermes, with global Claude/Codex
-           instructions and Claude SessionStart memory injection.
+           instructions, Claude startup injection, and local conversation capture.
   project  Project/env-scoped memory from .env, defaulting to a project folder
            under ~/.local/share/mneme-memory-mcp/projects. This configures MCP
            clients without installing global memory instructions.
@@ -487,6 +487,7 @@ EOF
     cat <<'EOF'
 - Always-on shared memory instructions for fresh Codex and Claude chats
 - Claude SessionStart memory injection
+- Claude/Codex searchable conversation capture hooks
 EOF
   else
     cat <<'EOF'

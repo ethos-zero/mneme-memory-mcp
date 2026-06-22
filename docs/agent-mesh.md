@@ -81,9 +81,13 @@ The installer also writes managed Mneme continuity blocks into:
 ~/.claude/CLAUDE.md
 ```
 
-and configures a Claude Code `SessionStart` hook that injects USER.md and MEMORY.md into new Claude sessions.
+and configures local hooks that keep the shared memory alive across fresh sessions:
 
-That means fresh local Claude and Codex chats should begin by checking the same memory layer before answering, then keep improving the layer with durable memories when the user expects continuity.
+- Claude `SessionStart` injects USER.md and MEMORY.md.
+- Claude `Stop` and `SessionEnd` index recent transcript snippets into Mneme search.
+- Codex `notify` is wrapped so each turn can index recent Codex transcript snippets, then forward to the previous notify command.
+
+That means fresh local Claude and Codex chats should begin by checking the same memory layer before answering, then keep improving the layer through durable memories and searchable conversation capture.
 
 More details live in [always-on-memory.md](always-on-memory.md).
 

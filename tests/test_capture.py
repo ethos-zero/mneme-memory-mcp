@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from mneme_memory_mcp.capture import parse_claude_jsonl, parse_codex_jsonl
+
+
+class CaptureTest(unittest.TestCase):
+    def write_jsonl(self, records: list[dict]) -> Path:
+        root = Path(tempfile.mkdtemp())
+        path = root / "session.jsonl"
+        path.write_text(
+            "\n".join(json.dumps(record) for record in records) + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def test_parse_claude_queue_and_tool_result(self) -> None:
+        path = self.write_jsonl(
+            [
+                {
+                    "type": "queue-operation",
+                    "operation": "enqueue",
+                    "sessionId": "claude-1",
+                    "content": "Please post the quote card to Buffer.",
+                },
+                {
+                    "type": "message",
+                    "sessionId": "claude-1",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "content": "Pinterest result: PostActionSuccess id 123",
+                            }
+                        ],
+                    },
+                },
+            ]
+        )
+
+        snippets = parse_claude_jsonl(path)
+
+        self.assertEqual(len(snippets), 2)
+        self.assertEqual(snippets[0].source, "claude")
+        self.assertIn("Buffer", snippets[0].text)
+        self.assertIn("PostActionSuccess", snippets[1].text)
+
+    def test_parse_codex_messages_and_redacts_secret(self) -> None:
+        path = self.write_jsonl(
+            [
+                {
+                    "type": "session_meta",
+                    "payload": {"id": "codex-1", "base_instructions": {"text": "skip me"}},
+                },
+                {
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "user_message",
+                        "message": "Use token=abc123 to inspect Buffer work.",
+                    },
+                },
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "I found the Buffer post draft."}],
+                    },
+                },
+            ]
+        )
+
+        snippets = parse_codex_jsonl(path)
+
+        self.assertEqual(len(snippets), 2)
+        self.assertEqual(snippets[0].session_id, "codex-1")
+        self.assertIn("token=[redacted]", snippets[0].text)
+        self.assertIn("Buffer post draft", snippets[1].text)
+
+
+if __name__ == "__main__":
+    unittest.main()
