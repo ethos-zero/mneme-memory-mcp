@@ -8,9 +8,14 @@ from pathlib import Path
 
 from mneme_memory_mcp.continuity import (
     MANAGED_START,
+    MNEME_CAPTURE_HOOK_NAME,
+    MNEME_CODEX_NOTIFY_NAME,
+    MNEME_HOOK_NAME,
+    MNEME_PROMPT_HOOK_NAME,
     ContinuityPaths,
     continuity_status,
     install_continuity,
+    _read_notify_values,
 )
 
 
@@ -19,14 +24,16 @@ class ContinuityTest(unittest.TestCase):
         home = root / "home"
         return ContinuityPaths(
             memory_home=root / "memory",
-            bin_dir=root / "repo" / ".venv" / "bin",
+            bin_dir=root / "repo" / ".venv" / ("Scripts" if os.name == "nt" else "bin"),
             codex_agents=home / ".codex" / "AGENTS.md",
             codex_config=home / ".codex" / "config.toml",
-            codex_notify_wrapper=home / ".codex" / "mneme-memory-notify.sh",
+            codex_notify_wrapper=home / ".codex" / MNEME_CODEX_NOTIFY_NAME,
             claude_md=home / ".claude" / "CLAUDE.md",
             claude_settings=home / ".claude" / "settings.json",
-            claude_hook=home / ".claude" / "hooks" / "mneme-memory-sessionstart.sh",
-            claude_capture_hook=home / ".claude" / "hooks" / "mneme-memory-capture.sh",
+            claude_user_config=home / ".claude.json",
+            claude_hook=home / ".claude" / "hooks" / MNEME_HOOK_NAME,
+            claude_prompt_hook=home / ".claude" / "hooks" / MNEME_PROMPT_HOOK_NAME,
+            claude_capture_hook=home / ".claude" / "hooks" / MNEME_CAPTURE_HOOK_NAME,
         )
 
     def test_install_continuity_preserves_existing_files_and_is_idempotent(self) -> None:
@@ -53,30 +60,42 @@ class ContinuityTest(unittest.TestCase):
             codex_text = paths.codex_agents.read_text(encoding="utf-8")
             claude_text = paths.claude_md.read_text(encoding="utf-8")
             settings = json.loads(paths.claude_settings.read_text(encoding="utf-8"))
+            claude_user_config = json.loads(paths.claude_user_config.read_text(encoding="utf-8"))
             codex_config = paths.codex_config.read_text(encoding="utf-8")
+            notify_values = _read_notify_values(codex_config)
             hook_executable = os.access(paths.claude_hook, os.X_OK)
+            prompt_hook_executable = os.access(paths.claude_prompt_hook, os.X_OK)
             capture_hook_executable = os.access(paths.claude_capture_hook, os.X_OK)
             notify_executable = os.access(paths.codex_notify_wrapper, os.X_OK)
 
         self.assertTrue(first.codex_instructions)
         self.assertTrue(second.claude_sessionstart_hook)
+        self.assertTrue(second.claude_userprompt_hook)
         self.assertTrue(second.claude_stop_capture_hook)
         self.assertTrue(second.claude_sessionend_capture_hook)
+        self.assertTrue(second.claude_mcp_config)
         self.assertTrue(second.codex_notify_capture)
         self.assertIn("# Existing Codex Notes", codex_text)
         self.assertIn("# Existing Claude Notes", claude_text)
         self.assertEqual(codex_text.count(MANAGED_START), 1)
         self.assertEqual(claude_text.count(MANAGED_START), 1)
         self.assertTrue(hook_executable)
+        self.assertTrue(prompt_hook_executable)
         self.assertTrue(capture_hook_executable)
         self.assertTrue(notify_executable)
         self.assertEqual(settings["enabledPlugins"]["codex@openai-codex"], True)
         self.assertIn("SessionStart", settings["hooks"])
+        self.assertIn("UserPromptSubmit", settings["hooks"])
         self.assertIn("Stop", settings["hooks"])
         self.assertIn("SessionEnd", settings["hooks"])
+        self.assertIn("mneme-memory", claude_user_config["mcpServers"])
+        self.assertEqual(
+            claude_user_config["mcpServers"]["mneme-memory"]["args"],
+            ["-m", "mneme_memory_mcp"],
+        )
         self.assertEqual(settings["hooks"]["Stop"][0]["hooks"][0]["command"], str(paths.claude_capture_hook))
-        self.assertIn(str(paths.codex_notify_wrapper), codex_config)
-        self.assertIn("turn-ended", codex_config)
+        self.assertEqual(notify_values[0], str(paths.codex_notify_wrapper))
+        self.assertIn("turn-ended", notify_values)
         self.assertEqual(codex_config.count("notify ="), 1)
 
     def test_existing_hermes_session_hook_counts_as_compatible(self) -> None:
@@ -111,8 +130,8 @@ class ContinuityTest(unittest.TestCase):
         self.assertTrue(status.claude_sessionstart_hook)
         self.assertTrue(status.claude_stop_capture_hook)
         self.assertIn("hermes-memory.sh", settings_text)
-        self.assertNotIn("mneme-memory-sessionstart.sh", settings_text)
-        self.assertIn("mneme-memory-capture.sh", settings_text)
+        self.assertNotIn(MNEME_HOOK_NAME, settings_text)
+        self.assertIn(MNEME_CAPTURE_HOOK_NAME, settings_text)
 
 
 if __name__ == "__main__":

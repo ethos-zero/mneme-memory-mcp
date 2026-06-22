@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -25,6 +26,24 @@ def find_hermes() -> str | None:
         Path.home() / ".hermes" / "bin" / "hermes",
         Path.home() / ".hermes" / "hermes-agent" / "hermes",
     ]
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        candidates.extend(
+            [
+                Path.home() / ".local" / "bin" / "hermes.exe",
+                Path.home() / ".hermes" / "bin" / "hermes.exe",
+                Path.home() / ".hermes" / "hermes-agent" / "hermes.exe",
+            ]
+        )
+        if local_app_data:
+            candidates.append(
+                Path(local_app_data)
+                / "hermes"
+                / "hermes-agent"
+                / "venv"
+                / "Scripts"
+                / "hermes.exe"
+            )
     existing = _first_existing(candidates)
     return str(existing) if existing else None
 
@@ -73,7 +92,10 @@ def status_lines() -> list[str]:
         lines.append(f"Hermes Agent: {hermes} ({_version(hermes)})")
     else:
         lines.append("Hermes Agent: missing")
-        lines.append("Install Hermes with: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash")
+        if os.name == "nt":
+            lines.append("Hermes auto-install is not available on Windows; Mneme MCP memory can still run without Hermes.")
+        else:
+            lines.append("Install Hermes with: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash")
 
     lines.extend(["", "Always-on memory continuity:"])
     lines.extend(f"  {line}" for line in continuity_status().lines())

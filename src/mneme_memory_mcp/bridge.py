@@ -163,6 +163,7 @@ def _with_memory_prompt(prompt: str, agent_label: str) -> str:
 
 
 def _run(agent: str, command: list[str], cwd: Path, timeout_seconds: int) -> AgentRun:
+    command = _windows_batch_safe_command(command)
     try:
         result = subprocess.run(
             command,
@@ -190,3 +191,15 @@ def _run(agent: str, command: list[str], cwd: Path, timeout_seconds: int) -> Age
         stdout=result.stdout,
         stderr=result.stderr,
     )
+
+
+def _windows_batch_safe_command(command: list[str]) -> list[str]:
+    if os.name != "nt" or not command:
+        return command
+    if Path(command[0]).suffix.lower() not in {".bat", ".cmd"}:
+        return command
+    return [command[0], *[_line_safe_arg(arg) for arg in command[1:]]]
+
+
+def _line_safe_arg(arg: str) -> str:
+    return str(arg).replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")

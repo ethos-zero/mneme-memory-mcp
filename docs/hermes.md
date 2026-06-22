@@ -18,16 +18,32 @@ cd mneme-memory-mcp
 ./scripts/install.sh
 ```
 
+Windows:
+
+```powershell
+git clone https://github.com/ethos-zero/mneme-memory-mcp.git
+cd mneme-memory-mcp
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
+```
+
+These commands prompt for `global`, `project`, or `server` setup. Non-interactive callers must stop and ask the user which profile they want, then rerun with `--profile`/`-Profile` plus `--profile-confirmed`/`-ProfileConfirmed`.
+
 If Hermes Agent is missing, the installer runs the official Hermes installer:
 
 ```bash
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 ```
 
+On Windows, Mneme looks for an existing Hermes Agent install and continues with Mneme MCP memory when Hermes is not present.
+
 Use this when Hermes is already installed or you want to manage it yourself:
 
 ```bash
-./scripts/install.sh --no-hermes-install
+./scripts/install.sh --profile global --profile-confirmed --no-hermes-install
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Profile global -ProfileConfirmed -NoHermesInstall
 ```
 
 ## What Gets Created
@@ -38,10 +54,18 @@ Use this when Hermes is already installed or you want to manage it yourself:
 - `~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-mcp`
 - `~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-doctor`
 
+On Windows, the managed venv defaults to `%LOCALAPPDATA%\mneme-memory-mcp\venv`. Mneme config uses `Scripts\python.exe -m ...` so it works even when local console-script launchers are blocked by application control policy.
+
 ## Check The Setup
 
 ```bash
 ~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-doctor
+```
+
+Windows:
+
+```powershell
+& "$env:LOCALAPPDATA\mneme-memory-mcp\venv\Scripts\python.exe" -m mneme_memory_mcp.doctor
 ```
 
 The doctor checks:
@@ -66,6 +90,18 @@ startup_timeout_sec = 120
 HERMES_HOME = "/Users/YOU/.hermes"
 ```
 
+Windows:
+
+```toml
+[mcp_servers.mneme_memory]
+command = 'C:\Users\YOU\AppData\Local\mneme-memory-mcp\venv\Scripts\python.exe'
+args = ['-m', 'mneme_memory_mcp']
+startup_timeout_sec = 120
+
+[mcp_servers.mneme_memory.env]
+HERMES_HOME = 'C:\Users\YOU\.hermes'
+```
+
 Claude Code:
 
 ```json
@@ -77,6 +113,23 @@ Claude Code:
       "args": [],
       "env": {
         "HERMES_HOME": "/Users/YOU/.hermes"
+      }
+    }
+  }
+}
+```
+
+Windows:
+
+```json
+{
+  "mcpServers": {
+    "mneme-memory": {
+      "type": "stdio",
+      "command": "C:\\Users\\YOU\\AppData\\Local\\mneme-memory-mcp\\venv\\Scripts\\python.exe",
+      "args": ["-m", "mneme_memory_mcp"],
+      "env": {
+        "HERMES_HOME": "C:\\Users\\YOU\\.hermes"
       }
     }
   }

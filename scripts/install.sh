@@ -12,6 +12,7 @@ MEMORY_HOME="$GLOBAL_MEMORY_HOME"
 ENV_FILE="${MNEME_ENV_FILE:-$ROOT/.env}"
 PROJECT_MEMORY_HOME="${MNEME_PROJECT_HOME:-$MNEME_DATA_DIR/projects/$PROJECT_SLUG}"
 SETUP_PROFILE="${MNEME_SETUP_PROFILE:-}"
+PROFILE_CONFIRMED="${MNEME_PROFILE_CONFIRMED:-0}"
 MCP_COMMAND="$VENV_DIR/bin/mneme-memory-mcp"
 MCP_ARGS=()
 MCP_STATIC_ENV=1
@@ -27,14 +28,14 @@ usage() {
 Mneme Memory MCP installer
 
 Usage:
-  ./scripts/install.sh [--profile global|project|server] [options]
+  ./scripts/install.sh [--profile global|project|server] [--profile-confirmed] [options]
 
-By default this installs Mneme into a managed user-data directory, not the
-Desktop or repo checkout. It installs Hermes Agent if the `hermes` command is
-not already available, wires Mneme into Codex and Claude Code, installs
-OpenAI's Claude-to-Codex plugin, installs Ponytail for both clients when their
-CLIs are present, and installs always-on memory instructions for the global
-profile.
+This installs Mneme into a managed user-data directory, not the Desktop or
+repo checkout. You must choose a setup profile so Mneme never silently assumes
+machine-wide memory. The installer installs Hermes Agent if the `hermes`
+command is not already available, wires Mneme into Codex and Claude Code,
+installs OpenAI's Claude-to-Codex plugin, and installs Ponytail for both
+clients when their CLIs are present.
 
 Setup profiles:
   global   Machine-wide persistent memory in ~/.hermes, with global Claude/Codex
@@ -46,6 +47,7 @@ Setup profiles:
 
 Options:
   --profile VALUE      Select global, project, or server setup.
+  --profile-confirmed  Confirm the selected profile after the user has chosen it.
   --global-memory      Alias for --profile global.
   --project-memory     Alias for --profile project.
   --server-only        Alias for --profile server.
@@ -63,6 +65,7 @@ Environment:
   MNEME_HOME    Memory home to use. Defaults to HERMES_HOME or ~/.hermes.
   HERMES_HOME   Hermes-compatible memory home.
   MNEME_SETUP_PROFILE  global, project, or server.
+  MNEME_PROFILE_CONFIRMED  Set to 1 only after the user chose the setup profile.
   MNEME_INSTALL_DIR    Managed install directory.
   MNEME_VENV_DIR       Python virtualenv directory.
   MNEME_DATA_DIR       Mneme data directory. Defaults to ~/.local/share/mneme-memory-mcp.
@@ -107,6 +110,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --profile=*)
       SETUP_PROFILE="${1#*=}"
+      ;;
+    --profile-confirmed)
+      PROFILE_CONFIRMED=1
       ;;
     --global-memory)
       SETUP_PROFILE="global"
@@ -241,11 +247,7 @@ abspath_under_root() {
 }
 
 choose_profile() {
-  if [ -n "$SETUP_PROFILE" ]; then
-    return 0
-  fi
-
-  if [ -t 0 ] && [ "${MNEME_INSTALL_NONINTERACTIVE:-0}" != "1" ]; then
+  if [ -z "$SETUP_PROFILE" ] && [ -t 0 ] && [ "${MNEME_INSTALL_NONINTERACTIVE:-0}" != "1" ]; then
     cat <<'EOF'
 
 Choose a Mneme setup profile:
@@ -264,26 +266,90 @@ Choose a Mneme setup profile:
      memory changes.
 
 EOF
-    printf 'Select [1]: '
+    printf 'Select 1, 2, or 3: '
     read -r choice
-    case "${choice:-1}" in
+    case "$choice" in
       1|global|g)
         SETUP_PROFILE="global"
+        PROFILE_CONFIRMED=1
         ;;
       2|project|p|env)
         SETUP_PROFILE="project"
+        PROFILE_CONFIRMED=1
         ;;
       3|server|s|manual)
         SETUP_PROFILE="server"
+        PROFILE_CONFIRMED=1
         ;;
       *)
         echo "Unknown selection: $choice" >&2
         exit 2
         ;;
     esac
-  else
-    SETUP_PROFILE="global"
+  elif [ -z "$SETUP_PROFILE" ]; then
+    cat >&2 <<'EOF'
+No Mneme setup profile was selected.
+
+Mneme must ask the user to choose one of these setup profiles before it can
+change local memory or client configuration:
+  global   machine-wide memory and global Claude/Codex instructions
+  project  project/env-scoped memory from .env
+  server   server install only; manual wiring
+
+Agents and other non-interactive callers must stop here, ask the user which
+profile they want, then rerun with both the chosen profile and explicit
+confirmation, for example:
+  ./scripts/install.sh --profile project --profile-confirmed
+EOF
+    exit 2
   fi
+
+  case "$SETUP_PROFILE" in
+    global|project|server)
+      ;;
+    *)
+      echo "Unknown profile: $SETUP_PROFILE" >&2
+      echo "Use --profile global, --profile project, or --profile server." >&2
+      exit 2
+      ;;
+  esac
+
+  case "$PROFILE_CONFIRMED" in
+    1|true|TRUE|True|yes|YES|Yes)
+      return 0
+      ;;
+  esac
+
+  if [ -t 0 ] && [ "${MNEME_INSTALL_NONINTERACTIVE:-0}" != "1" ]; then
+    cat <<EOF
+
+Selected Mneme setup profile: $SETUP_PROFILE
+
+This choice controls whether Mneme writes global Claude/Codex memory
+instructions, uses project-scoped memory, or only installs the local server.
+EOF
+    printf 'Type "%s" to confirm this profile, or anything else to stop: ' "$SETUP_PROFILE"
+    read -r confirmation
+    if [ "$confirmation" = "$SETUP_PROFILE" ] || [ "$confirmation" = "yes" ]; then
+      PROFILE_CONFIRMED=1
+      return 0
+    fi
+    echo "Profile was not confirmed; stopping before install." >&2
+    exit 2
+  fi
+
+  cat >&2 <<EOF
+Mneme setup profile "$SETUP_PROFILE" was supplied, but the user confirmation
+step has not been recorded.
+
+Agents and other non-interactive callers must stop, ask the user to choose
+global, project, or server setup, then rerun only after the user answers:
+  ./scripts/install.sh --profile $SETUP_PROFILE --profile-confirmed
+
+You can also set MNEME_PROFILE_CONFIRMED=1 after the user has explicitly
+confirmed the selected setup profile.
+EOF
+  exit 2
 }
 
 read_env_memory_home() {

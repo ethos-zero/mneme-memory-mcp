@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,9 +23,15 @@ print("args=" + repr(sys.argv[1:]))
 """
 
 
-@unittest.skipIf(os.name == "nt", "fake-binary shebang trick is POSIX-only; bridge code itself is cross-platform")
 class AgentBridgeTest(unittest.TestCase):
     def make_fake_bin(self, root: Path, name: str) -> None:
+        if os.name == "nt":
+            script = root / f"{name}_fake.py"
+            script.write_text(FAKE_AGENT, encoding="utf-8")
+            path = root / f"{name}.cmd"
+            path.write_text(f'@echo off\r\n"{sys.executable}" "{script}" %*\r\n', encoding="utf-8")
+            return
+
         path = root / name
         path.write_text(FAKE_AGENT, encoding="utf-8")
         path.chmod(path.stat().st_mode | stat.S_IXUSR)

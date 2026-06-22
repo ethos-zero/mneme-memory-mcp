@@ -28,6 +28,8 @@ codex plugin add ponytail@ponytail
 
 If either CLI is missing, the installer skips that client and keeps going.
 
+Ponytail is installed by default for `global` and `project` profile installs when the matching client CLI is available and runnable. It is skipped for `server` profile installs and when `--no-agent-plugins`/`-NoAgentPlugins` or `--memory-only`/`-MemoryOnly` is set.
+
 ## Why It Belongs Here
 
 Mneme gives agents memory and a bridge. Ponytail gives them a shared engineering bias:
@@ -45,13 +47,25 @@ That makes the Claude/Codex loop less noisy. The agents can ask each other for h
 To install Mneme without Ponytail or other agent plugins:
 
 ```bash
-./scripts/install.sh --no-agent-plugins
+./scripts/install.sh --profile global --profile-confirmed --no-agent-plugins
+```
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Profile global -ProfileConfirmed -NoAgentPlugins
 ```
 
 To install only the memory server:
 
 ```bash
-./scripts/install.sh --memory-only
+./scripts/install.sh --profile global --profile-confirmed --memory-only
+```
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Profile global -ProfileConfirmed -MemoryOnly
 ```
 
 ## Source

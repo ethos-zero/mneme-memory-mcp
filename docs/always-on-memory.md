@@ -4,22 +4,29 @@ Mneme can run in global mode or project/env-scoped mode.
 
 Global mode is meant to make every configured agent answer from the same remembered ground. Project/env mode is meant to keep memory isolated to a repo or environment file.
 
-The installer gives Claude Code and Codex a persistent memory habit in five layers:
+The installer gives Claude Code and Codex a persistent memory habit in six layers:
 
 1. Shared local memory files in `~/.hermes/memories`
 2. Shared searchable facts in `~/.hermes/memory_store.db`
 3. Mneme MCP tools in Claude and Codex
 4. Global client instructions that tell new chats to consult Mneme before substantive answers
-5. Local capture hooks that index recent Claude/Codex transcript snippets into searchable memory
+5. A Claude `UserPromptSubmit` hook that adds shared memory context before every future prompt
+6. Local capture hooks that index recent Claude/Codex transcript snippets into searchable memory
 
-For Claude Code, Mneme also adds a `SessionStart` hook that prints the Markdown memory summary into every fresh Claude session.
+For Claude Code, Mneme also adds a `SessionStart` hook that prints the Markdown memory summary into every fresh Claude session and a `UserPromptSubmit` hook that injects the current memory summary plus recent durable facts before future prompts.
 
 ## What Gets Installed
 
 Running:
 
 ```bash
-./scripts/install.sh --profile global
+./scripts/install.sh --profile global --profile-confirmed
+```
+
+or on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Profile global -ProfileConfirmed
 ```
 
 installs or updates managed Mneme blocks in:
@@ -29,16 +36,27 @@ installs or updates managed Mneme blocks in:
 ~/.claude/CLAUDE.md
 ```
 
+On Windows these are `%USERPROFILE%\.codex\AGENTS.md` and `%USERPROFILE%\.claude\CLAUDE.md`.
+
 The blocks tell each client to start from shared memory, prefer the Mneme MCP tools, and use the `mneme-memory` CLI fallback if MCP tools are unavailable.
 
 Claude also gets:
 
 ```text
 ~/.claude/hooks/mneme-memory-sessionstart.sh
+~/.claude/hooks/mneme-memory-userprompt.sh
 ~/.claude/hooks/mneme-memory-capture.sh
 ```
 
-and a `SessionStart` hook entry in:
+On Windows:
+
+```text
+%USERPROFILE%\.claude\hooks\mneme-memory-sessionstart.cmd
+%USERPROFILE%\.claude\hooks\mneme-memory-userprompt.cmd
+%USERPROFILE%\.claude\hooks\mneme-memory-capture.cmd
+```
+
+and `SessionStart` plus `UserPromptSubmit` hook entries in:
 
 ```text
 ~/.claude/settings.json
@@ -49,6 +67,8 @@ The capture hook is also installed into Claude Code `Stop` and `SessionEnd` hook
 ```text
 ~/.codex/mneme-memory-notify.sh
 ```
+
+On Windows this wrapper is `%USERPROFILE%\.codex\mneme-memory-notify.cmd`.
 
 The wrapper indexes recent Codex transcript snippets, then forwards to the previously configured notify command when one existed.
 
@@ -61,7 +81,13 @@ Automatic captures go into SQLite as lower-trust `conversation` facts with `capt
 Use this when you want Mneme available to Claude and Codex, but you do not want global memory instructions or a machine-wide startup hook:
 
 ```bash
-./scripts/install.sh --profile project
+./scripts/install.sh --profile project --profile-confirmed
+```
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Profile project -ProfileConfirmed
 ```
 
 This profile reads memory settings from:
@@ -110,10 +136,22 @@ Check the continuity layer with:
 ~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-doctor
 ```
 
+Windows:
+
+```powershell
+& "$env:LOCALAPPDATA\mneme-memory-mcp\venv\Scripts\python.exe" -m mneme_memory_mcp.doctor
+```
+
 or directly:
 
 ```bash
 ~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-continuity status
+```
+
+Windows:
+
+```powershell
+& "$env:LOCALAPPDATA\mneme-memory-mcp\venv\Scripts\python.exe" -m mneme_memory_mcp.continuity status
 ```
 
 Expected healthy output includes:
@@ -124,14 +162,17 @@ Codex automatic memory capture: ok
 Claude always-on memory instructions: ok
 Claude SessionStart memory hook file: ok
 Claude SessionStart memory hook configured: ok
+Claude per-prompt memory hook file: ok
+Claude UserPromptSubmit memory hook configured: ok
 Claude automatic memory capture hook file: ok
 Claude Stop memory capture configured: ok
 Claude SessionEnd memory capture configured: ok
+Claude user-scope MCP config: ok
 ```
 
 ## Practical Guarantee
 
-Mneme can make the memory layer the default for configured Claude Code and Codex clients by installing global instructions, MCP servers, a CLI fallback, startup memory injection, and local capture hooks.
+Mneme can make the memory layer the default for configured Claude Code and Codex clients by installing global instructions, MCP servers, a CLI fallback, startup/per-prompt memory injection, and local capture hooks.
 
 No package can force an unconfigured client, a client that ignores its global instructions, or a disconnected remote chat to read local files. But once the installer has run successfully on a machine, new local Claude Code and Codex chats have the shared memory layer wired in by default.
 
@@ -140,17 +181,29 @@ No package can force an unconfigured client, a client that ignores its global in
 Skip the continuity layer while keeping MCP/plugin setup:
 
 ```bash
-./scripts/install.sh --no-continuity
+./scripts/install.sh --profile global --profile-confirmed --no-continuity
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Profile global -ProfileConfirmed -NoContinuity
 ```
 
 Install only the memory server without client or plugin changes:
 
 ```bash
-./scripts/install.sh --memory-only
+./scripts/install.sh --profile global --profile-confirmed --memory-only
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Profile global -ProfileConfirmed -MemoryOnly
 ```
 
 Install with project/env-scoped memory instead of global memory:
 
 ```bash
-./scripts/install.sh --profile project
+./scripts/install.sh --profile project --profile-confirmed
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Profile project -ProfileConfirmed
 ```

@@ -15,10 +15,17 @@ from .store import resolve_home, resolve_memory_dir
 
 MANAGED_START = "<!-- mneme-memory-start -->"
 MANAGED_END = "<!-- mneme-memory-end -->"
-MNEME_HOOK_NAME = "mneme-memory-sessionstart.sh"
-MNEME_CAPTURE_HOOK_NAME = "mneme-memory-capture.sh"
-MNEME_CODEX_NOTIFY_NAME = "mneme-memory-notify.sh"
-COMPATIBLE_HOOK_NAMES = (MNEME_HOOK_NAME, "hermes-memory.sh", "sessionstart-hermes-memory.sh")
+MNEME_HOOK_NAME = "mneme-memory-sessionstart.cmd" if os.name == "nt" else "mneme-memory-sessionstart.sh"
+MNEME_PROMPT_HOOK_NAME = "mneme-memory-userprompt.cmd" if os.name == "nt" else "mneme-memory-userprompt.sh"
+MNEME_CAPTURE_HOOK_NAME = "mneme-memory-capture.cmd" if os.name == "nt" else "mneme-memory-capture.sh"
+MNEME_CODEX_NOTIFY_NAME = "mneme-memory-notify.cmd" if os.name == "nt" else "mneme-memory-notify.sh"
+COMPATIBLE_HOOK_NAMES = (
+    MNEME_HOOK_NAME,
+    "mneme-memory-sessionstart.sh",
+    "mneme-memory-sessionstart.cmd",
+    "hermes-memory.sh",
+    "sessionstart-hermes-memory.sh",
+)
 
 
 @dataclass(frozen=True)
@@ -30,7 +37,9 @@ class ContinuityPaths:
     codex_notify_wrapper: Path
     claude_md: Path
     claude_settings: Path
+    claude_user_config: Path
     claude_hook: Path
+    claude_prompt_hook: Path
     claude_capture_hook: Path
 
 
@@ -41,15 +50,20 @@ class ContinuityStatus:
     claude_instructions: bool
     claude_hook_file: bool
     claude_sessionstart_hook: bool
+    claude_prompt_hook_file: bool
+    claude_userprompt_hook: bool
     claude_capture_hook_file: bool
     claude_stop_capture_hook: bool
     claude_sessionend_capture_hook: bool
+    claude_mcp_config: bool
     codex_agents: Path
     codex_config: Path
     codex_notify_wrapper: Path
     claude_md: Path
     claude_settings: Path
+    claude_user_config: Path
     claude_hook: Path
+    claude_prompt_hook: Path
     claude_capture_hook: Path
 
     def lines(self) -> list[str]:
@@ -59,9 +73,12 @@ class ContinuityStatus:
             f"Claude always-on memory instructions: {_ok(self.claude_instructions)} ({self.claude_md})",
             f"Claude SessionStart memory hook file: {_ok(self.claude_hook_file)} ({self.claude_hook})",
             f"Claude SessionStart memory hook configured: {_ok(self.claude_sessionstart_hook)} ({self.claude_settings})",
+            f"Claude per-prompt memory hook file: {_ok(self.claude_prompt_hook_file)} ({self.claude_prompt_hook})",
+            f"Claude UserPromptSubmit memory hook configured: {_ok(self.claude_userprompt_hook)} ({self.claude_settings})",
             f"Claude automatic memory capture hook file: {_ok(self.claude_capture_hook_file)} ({self.claude_capture_hook})",
             f"Claude Stop memory capture configured: {_ok(self.claude_stop_capture_hook)} ({self.claude_settings})",
             f"Claude SessionEnd memory capture configured: {_ok(self.claude_sessionend_capture_hook)} ({self.claude_settings})",
+            f"Claude user-scope MCP config: {_ok(self.claude_mcp_config)} ({self.claude_user_config})",
         ]
 
 
@@ -80,7 +97,9 @@ def default_paths(
         codex_notify_wrapper=home / ".codex" / MNEME_CODEX_NOTIFY_NAME,
         claude_md=home / ".claude" / "CLAUDE.md",
         claude_settings=home / ".claude" / "settings.json",
+        claude_user_config=home / ".claude.json",
         claude_hook=home / ".claude" / "hooks" / MNEME_HOOK_NAME,
+        claude_prompt_hook=home / ".claude" / "hooks" / MNEME_PROMPT_HOOK_NAME,
         claude_capture_hook=home / ".claude" / "hooks" / MNEME_CAPTURE_HOOK_NAME,
     )
 
@@ -94,14 +113,17 @@ def install_continuity(paths: ContinuityPaths | None = None) -> ContinuityStatus
 
     upsert_managed_block(paths.codex_agents, codex_block(paths))
     upsert_managed_block(paths.claude_md, claude_block(paths))
-    # ponytail: the SessionStart auto-inject hook is a bash script, so install it
-    # only on POSIX. On Windows the managed AGENTS.md/CLAUDE.md blocks plus the
-    # Mneme MCP tools still provide continuity; the hook is a bonus layer.
-    if os.name != "nt":
-        install_claude_hook(paths)
-        install_claude_capture_hook(paths)
-        merge_claude_settings(paths.claude_settings, paths.claude_hook, paths.claude_capture_hook)
-        install_codex_notify_wrapper(paths)
+    install_claude_hook(paths)
+    install_claude_prompt_hook(paths)
+    install_claude_capture_hook(paths)
+    merge_claude_settings(
+        paths.claude_settings,
+        paths.claude_hook,
+        paths.claude_capture_hook,
+        paths.claude_prompt_hook,
+    )
+    install_claude_mcp_config(paths)
+    install_codex_notify_wrapper(paths)
     return continuity_status(paths)
 
 
@@ -111,32 +133,40 @@ def continuity_status(paths: ContinuityPaths | None = None) -> ContinuityStatus:
         codex_instructions=_path_contains(paths.codex_agents, MANAGED_START),
         codex_notify_capture=_codex_notify_capture_configured(paths),
         claude_instructions=_path_contains(paths.claude_md, MANAGED_START),
-        claude_hook_file=paths.claude_hook.exists() and os.access(paths.claude_hook, os.X_OK),
+        claude_hook_file=_is_runnable(paths.claude_hook),
         claude_sessionstart_hook=_has_compatible_sessionstart_hook(paths.claude_settings),
-        claude_capture_hook_file=paths.claude_capture_hook.exists()
-        and os.access(paths.claude_capture_hook, os.X_OK),
+        claude_prompt_hook_file=_is_runnable(paths.claude_prompt_hook),
+        claude_userprompt_hook=_has_hook_command(
+            paths.claude_settings,
+            "UserPromptSubmit",
+            paths.claude_prompt_hook.name,
+        ),
+        claude_capture_hook_file=_is_runnable(paths.claude_capture_hook),
         claude_stop_capture_hook=_has_hook_command(
             paths.claude_settings,
             "Stop",
-            MNEME_CAPTURE_HOOK_NAME,
+            paths.claude_capture_hook.name,
         ),
         claude_sessionend_capture_hook=_has_hook_command(
             paths.claude_settings,
             "SessionEnd",
-            MNEME_CAPTURE_HOOK_NAME,
+            paths.claude_capture_hook.name,
         ),
+        claude_mcp_config=_claude_mcp_configured(paths),
         codex_agents=paths.codex_agents,
         codex_config=paths.codex_config,
         codex_notify_wrapper=paths.codex_notify_wrapper,
         claude_md=paths.claude_md,
         claude_settings=paths.claude_settings,
+        claude_user_config=paths.claude_user_config,
         claude_hook=paths.claude_hook,
+        claude_prompt_hook=paths.claude_prompt_hook,
         claude_capture_hook=paths.claude_capture_hook,
     )
 
 
 def codex_block(paths: ContinuityPaths) -> str:
-    cli = paths.bin_dir / "mneme-memory"
+    cli = _module_command(paths.bin_dir, "mneme_memory_mcp.cli")
     return f"""## Mneme Shared Memory
 Treat Mneme as the continuity layer for every Codex chat in this environment.
 
@@ -160,7 +190,7 @@ Markdown memories: `{resolve_memory_dir(paths.memory_home)}`
 
 
 def claude_block(paths: ContinuityPaths) -> str:
-    cli = paths.bin_dir / "mneme-memory"
+    cli = _module_command(paths.bin_dir, "mneme_memory_mcp.cli")
     return f"""## Mneme Shared Memory
 Treat Mneme as the continuity layer for every Claude Code session in this environment.
 
@@ -192,7 +222,7 @@ def upsert_managed_block(path: Path, block: str) -> bool:
         re.DOTALL,
     )
     if pattern.search(existing):
-        updated = pattern.sub(managed, existing)
+        updated = pattern.sub(lambda _match: managed, existing)
     else:
         prefix = existing.rstrip()
         updated = f"{prefix}\n\n{managed}" if prefix else managed
@@ -206,15 +236,46 @@ def upsert_managed_block(path: Path, block: str) -> bool:
 def install_claude_hook(paths: ContinuityPaths) -> None:
     paths.claude_hook.parent.mkdir(parents=True, exist_ok=True)
     paths.claude_hook.write_text(claude_hook_script(paths), encoding="utf-8")
-    mode = paths.claude_hook.stat().st_mode
-    paths.claude_hook.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    _make_runnable(paths.claude_hook)
+
+
+def install_claude_prompt_hook(paths: ContinuityPaths) -> None:
+    paths.claude_prompt_hook.parent.mkdir(parents=True, exist_ok=True)
+    paths.claude_prompt_hook.write_text(claude_prompt_hook_script(paths), encoding="utf-8")
+    _make_runnable(paths.claude_prompt_hook)
 
 
 def install_claude_capture_hook(paths: ContinuityPaths) -> None:
     paths.claude_capture_hook.parent.mkdir(parents=True, exist_ok=True)
     paths.claude_capture_hook.write_text(claude_capture_hook_script(paths), encoding="utf-8")
-    mode = paths.claude_capture_hook.stat().st_mode
-    paths.claude_capture_hook.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    _make_runnable(paths.claude_capture_hook)
+
+
+def install_claude_mcp_config(paths: ContinuityPaths) -> bool:
+    data = _read_json_object(paths.claude_user_config)
+    servers = data.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        servers = {}
+        data["mcpServers"] = servers
+
+    server = {
+        "type": "stdio",
+        "command": str(_python_executable(paths.bin_dir)),
+        "args": ["-m", "mneme_memory_mcp"],
+        "env": {
+            "HERMES_HOME": str(paths.memory_home),
+            "MNEME_HOME": str(paths.memory_home),
+        },
+    }
+    servers["mneme-memory"] = server
+
+    serialized = json.dumps(data, indent=2, sort_keys=False) + "\n"
+    existing = paths.claude_user_config.read_text(encoding="utf-8") if paths.claude_user_config.exists() else ""
+    if serialized != existing:
+        paths.claude_user_config.parent.mkdir(parents=True, exist_ok=True)
+        paths.claude_user_config.write_text(serialized, encoding="utf-8")
+        return True
+    return False
 
 
 def install_codex_notify_wrapper(paths: ContinuityPaths) -> None:
@@ -237,8 +298,7 @@ def install_codex_notify_wrapper(paths: ContinuityPaths) -> None:
         codex_notify_wrapper_script(paths, original_command),
         encoding="utf-8",
     )
-    mode = paths.codex_notify_wrapper.stat().st_mode
-    paths.codex_notify_wrapper.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    _make_runnable(paths.codex_notify_wrapper)
 
     updated_values = [str(paths.codex_notify_wrapper), *values[1:]] if values else [str(paths.codex_notify_wrapper)]
     updated = _write_notify_values(config_text, updated_values)
@@ -247,6 +307,8 @@ def install_codex_notify_wrapper(paths: ContinuityPaths) -> None:
 
 
 def claude_hook_script(paths: ContinuityPaths) -> str:
+    if os.name == "nt":
+        return claude_hook_cmd_script(paths)
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 
@@ -275,7 +337,9 @@ fi
 
 
 def claude_capture_hook_script(paths: ContinuityPaths) -> str:
-    capture_cli = paths.bin_dir / "mneme-memory-capture"
+    if os.name == "nt":
+        return claude_capture_hook_cmd_script(paths)
+    capture_cli = _console_script(paths.bin_dir, "mneme-memory-capture")
     return f"""#!/usr/bin/env bash
 set +e
 
@@ -288,8 +352,26 @@ exit 0
 """
 
 
+def claude_prompt_hook_script(paths: ContinuityPaths) -> str:
+    if os.name == "nt":
+        return claude_prompt_hook_cmd_script(paths)
+    context_module = _module_command(paths.bin_dir, "mneme_memory_mcp.hook_context")
+    return f"""#!/usr/bin/env bash
+set +e
+
+MEMORY_HOME="${{MNEME_HOME:-${{HERMES_HOME:-{paths.memory_home}}}}}"
+export MNEME_HOME="$MEMORY_HOME"
+export HERMES_HOME="$MEMORY_HOME"
+
+{context_module} --memory-home "$MEMORY_HOME" --event UserPromptSubmit
+exit 0
+"""
+
+
 def codex_notify_wrapper_script(paths: ContinuityPaths, original_command: str) -> str:
-    capture_cli = paths.bin_dir / "mneme-memory-capture"
+    if os.name == "nt":
+        return codex_notify_wrapper_cmd_script(paths, original_command)
+    capture_cli = _console_script(paths.bin_dir, "mneme-memory-capture")
     original = shlex.quote(original_command)
     return f"""#!/usr/bin/env bash
 set +e
@@ -309,10 +391,115 @@ exit 0
 """
 
 
+def claude_hook_cmd_script(paths: ContinuityPaths) -> str:
+    python = _cmd_literal(str(_python_executable(paths.bin_dir)))
+    memory_home = _cmd_literal(str(paths.memory_home))
+    return f"""@echo off
+setlocal
+
+if "%MNEME_HOME%"=="" (
+  if "%HERMES_HOME%"=="" (
+    set "MEMORY_HOME={memory_home}"
+  ) else (
+    set "MEMORY_HOME=%HERMES_HOME%"
+  )
+) else (
+  set "MEMORY_HOME=%MNEME_HOME%"
+)
+set "MNEME_HOME=%MEMORY_HOME%"
+set "HERMES_HOME=%MEMORY_HOME%"
+
+echo ## Mneme shared persistent memory
+echo.
+echo Claude Code should use this shared memory before substantive answers. Search or write durable facts through the mneme-memory MCP server when available.
+echo.
+"{python}" -m mneme_memory_mcp.cli summary 2>nul
+exit /b 0
+"""
+
+
+def claude_prompt_hook_cmd_script(paths: ContinuityPaths) -> str:
+    python = _cmd_literal(str(_python_executable(paths.bin_dir)))
+    memory_home = _cmd_literal(str(paths.memory_home))
+    return f"""@echo off
+setlocal
+
+if "%MNEME_HOME%"=="" (
+  if "%HERMES_HOME%"=="" (
+    set "MEMORY_HOME={memory_home}"
+  ) else (
+    set "MEMORY_HOME=%HERMES_HOME%"
+  )
+) else (
+  set "MEMORY_HOME=%MNEME_HOME%"
+)
+set "MNEME_HOME=%MEMORY_HOME%"
+set "HERMES_HOME=%MEMORY_HOME%"
+
+"{python}" -m mneme_memory_mcp.hook_context --memory-home "%MEMORY_HOME%" --event UserPromptSubmit
+exit /b 0
+"""
+
+
+def claude_capture_hook_cmd_script(paths: ContinuityPaths) -> str:
+    python = _cmd_literal(str(_python_executable(paths.bin_dir)))
+    memory_home = _cmd_literal(str(paths.memory_home))
+    return f"""@echo off
+setlocal
+
+if "%MNEME_HOME%"=="" (
+  if "%HERMES_HOME%"=="" (
+    set "MEMORY_HOME={memory_home}"
+  ) else (
+    set "MEMORY_HOME=%HERMES_HOME%"
+  )
+) else (
+  set "MEMORY_HOME=%MNEME_HOME%"
+)
+set "MNEME_HOME=%MEMORY_HOME%"
+set "HERMES_HOME=%MEMORY_HOME%"
+
+"{python}" -m mneme_memory_mcp.capture claude --memory-home "%MEMORY_HOME%" --since-minutes 360 --limit-files 12 --quiet >nul 2>nul
+exit /b 0
+"""
+
+
+def codex_notify_wrapper_cmd_script(paths: ContinuityPaths, original_command: str) -> str:
+    python = _cmd_literal(str(_python_executable(paths.bin_dir)))
+    memory_home = _cmd_literal(str(paths.memory_home))
+    original = _cmd_literal(original_command)
+    return f"""@echo off
+setlocal
+
+if "%MNEME_HOME%"=="" (
+  if "%HERMES_HOME%"=="" (
+    set "MEMORY_HOME={memory_home}"
+  ) else (
+    set "MEMORY_HOME=%HERMES_HOME%"
+  )
+) else (
+  set "MEMORY_HOME=%MNEME_HOME%"
+)
+set "MNEME_HOME=%MEMORY_HOME%"
+set "HERMES_HOME=%MEMORY_HOME%"
+
+"{python}" -m mneme_memory_mcp.capture codex --memory-home "%MEMORY_HOME%" --since-minutes 360 --limit-files 12 --quiet >nul 2>nul
+
+set "ORIGINAL_NOTIFY={original}"
+if not "%ORIGINAL_NOTIFY%"=="" (
+  if exist "%ORIGINAL_NOTIFY%" (
+    "%ORIGINAL_NOTIFY%" %*
+  )
+)
+exit /b 0
+"""
+
+
 def merge_claude_settings(
     settings_path: Path,
     hook_path: Path,
     capture_hook_path: Path | None = None,
+    prompt_hook_path: Path | None = None,
 ) -> bool:
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     data = _read_json_object(settings_path)
@@ -328,6 +515,9 @@ def merge_claude_settings(
 
     if not _sessionstart_has_compatible_hook(session_start):
         session_start.append({"hooks": [{"type": "command", "command": str(hook_path)}]})
+
+    if prompt_hook_path is not None:
+        _ensure_hook_command(hooks, "UserPromptSubmit", str(prompt_hook_path))
 
     if capture_hook_path is not None:
         _ensure_hook_command(hooks, "Stop", str(capture_hook_path))
@@ -437,17 +627,69 @@ def _read_notify_values(config_text: str) -> list[str]:
 def _write_notify_values(config_text: str, values: list[str]) -> str:
     line = f"notify = {json.dumps(values, ensure_ascii=False)}"
     if re.search(r"(?m)^notify\s*=\s*\[[^\n]*\]", config_text):
-        return re.sub(r"(?m)^notify\s*=\s*\[[^\n]*\]", line, config_text, count=1)
+        return re.sub(r"(?m)^notify\s*=\s*\[[^\n]*\]", lambda _match: line, config_text, count=1)
     return f"{line}\n{config_text}" if config_text else f"{line}\n"
 
 
 def _codex_notify_capture_configured(paths: ContinuityPaths) -> bool:
-    if not paths.codex_notify_wrapper.exists() or not os.access(paths.codex_notify_wrapper, os.X_OK):
+    if not _is_runnable(paths.codex_notify_wrapper):
         return False
     if not paths.codex_config.exists():
         return False
     values = _read_notify_values(paths.codex_config.read_text(encoding="utf-8"))
     return bool(values and values[0] == str(paths.codex_notify_wrapper))
+
+
+def _claude_mcp_configured(paths: ContinuityPaths) -> bool:
+    data = _read_json_object(paths.claude_user_config)
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict):
+        return False
+    server = servers.get("mneme-memory")
+    if not isinstance(server, dict):
+        return False
+    return (
+        str(server.get("command") or "") == str(_python_executable(paths.bin_dir))
+        and "mneme_memory_mcp" in [str(arg) for arg in server.get("args", [])]
+    )
+
+
+def _console_script(bin_dir: Path, name: str) -> Path:
+    suffix = ".exe" if os.name == "nt" else ""
+    return bin_dir / f"{name}{suffix}"
+
+
+def _python_executable(bin_dir: Path) -> Path:
+    return bin_dir / ("python.exe" if os.name == "nt" else "python")
+
+
+def _module_command(bin_dir: Path, module: str) -> str:
+    if os.name != "nt":
+        script_name = {
+            "mneme_memory_mcp.cli": "mneme-memory",
+            "mneme_memory_mcp.capture": "mneme-memory-capture",
+            "mneme_memory_mcp.continuity": "mneme-memory-continuity",
+        }.get(module)
+        if script_name:
+            return str(_console_script(bin_dir, script_name))
+    return f'"{_python_executable(bin_dir)}" -m {module}'
+
+
+def _make_runnable(path: Path) -> None:
+    if os.name == "nt":
+        return
+    mode = path.stat().st_mode
+    path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def _is_runnable(path: Path) -> bool:
+    if os.name == "nt":
+        return path.exists() and path.is_file()
+    return path.exists() and os.access(path, os.X_OK)
+
+
+def _cmd_literal(value: str) -> str:
+    return value.replace("%", "%%").replace('"', '""')
 
 
 def _ok(value: bool) -> str:

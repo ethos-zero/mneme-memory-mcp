@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -82,7 +83,7 @@ class SharedMemoryStore:
     def ensure(self) -> None:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.connect() as conn:
+        with closing(self.connect()) as conn:
             conn.executescript(SCHEMA)
             conn.commit()
 
@@ -138,7 +139,7 @@ class SharedMemoryStore:
     def list(self, limit: int = 25) -> list[Fact]:
         self.ensure()
         limit = _bounded_limit(limit, upper=100)
-        with self.connect() as conn:
+        with closing(self.connect()) as conn:
             rows = conn.execute(
                 """
                 SELECT fact_id, content, category, tags, trust_score
@@ -156,7 +157,7 @@ class SharedMemoryStore:
         if not query:
             return []
         limit = _bounded_limit(limit, upper=25)
-        with self.connect() as conn:
+        with closing(self.connect()) as conn:
             try:
                 rows = conn.execute(
                     """
@@ -206,7 +207,7 @@ class SharedMemoryStore:
             else current.trust_score
         )
 
-        with self.connect() as conn:
+        with closing(self.connect()) as conn:
             conn.execute(
                 """
                 UPDATE facts
@@ -227,14 +228,14 @@ class SharedMemoryStore:
         current = self._get_fact(fact_id)
         if current is None:
             return False
-        with self.connect() as conn:
+        with closing(self.connect()) as conn:
             conn.execute("DELETE FROM facts WHERE fact_id = ?", (fact_id,))
             conn.commit()
         self._remove_markdown_entry(current.content)
         return True
 
     def _get_fact(self, fact_id: int) -> Fact | None:
-        with self.connect() as conn:
+        with closing(self.connect()) as conn:
             row = conn.execute(
                 """
                 SELECT fact_id, content, category, tags, trust_score
@@ -252,7 +253,7 @@ class SharedMemoryStore:
         tags: str,
         trust_score: float = 0.65,
     ) -> int:
-        with self.connect() as conn:
+        with closing(self.connect()) as conn:
             try:
                 cur = conn.execute(
                     """
