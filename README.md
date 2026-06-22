@@ -2,7 +2,7 @@
 
 The memory that grows with every agent.
 
-![Mneme Memory MCP hero artwork](assets/mneme-hero.png)
+![Mneme Memory MCP](assets/mneme-hero.png)
 
 Mneme is a local-first shared memory and agent-mesh layer for Claude, Codex, Hermes, and any MCP-aware agent you trust.
 
@@ -34,16 +34,14 @@ Claude Code  <---->  mneme-memory-mcp  <---->  Codex
 
 Mneme means memory. Hermes carries messages; Mneme keeps them from disappearing. This project is the bridge that lets every connected agent return to the same remembered context.
 
-## Artwork
-
-The project artwork uses an original ultramarine-and-ivory engraving style: two agent forms, a shared ribbon between them, and a persistent memory layer above. It is meant to nod toward the mythic Hermes lineage without copying or implying affiliation with Hermes Agent, Nous Research, or any other project.
-
 ## Platform support
 
 The Mneme package (MCP server, memory tools, and CLIs) is pure Python and runs on macOS, Linux, and Windows.
 
 - **macOS / Linux:** use the one-command installer below (`./scripts/install.sh` is bash).
 - **Windows:** bash is not native, so use the [Manual Install](#manual-install) plus [Configure Codex](#configure-codex) and [Configure Claude Code](#configure-claude-code) steps (all cross-platform), or run the installer under WSL or Git Bash.
+
+A dedicated native Windows setup path is planned so Mneme can offer first-class setup across macOS, Linux, and Windows.
 
 Hermes auto-install and the Claude `SessionStart` memory hook are macOS/Linux only. On Windows, continuity still works through the managed `AGENTS.md`/`CLAUDE.md` instructions and the Mneme MCP tools.
 
@@ -159,7 +157,7 @@ The default installer performs a normal package install, so the runtime does not
 
 ## Agent Mesh
 
-![Mneme agent bridge artwork](assets/docs/agent-bridge.png)
+![Mneme agent bridge](assets/docs/agent-bridge.png)
 
 Mneme makes Claude and Codex meet in the same memory field.
 
