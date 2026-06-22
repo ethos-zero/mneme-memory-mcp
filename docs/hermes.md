@@ -35,13 +35,13 @@ Use this when Hermes is already installed or you want to manage it yourself:
 - `~/.hermes/memories/USER.md`
 - `~/.hermes/memories/MEMORY.md`
 - `~/.hermes/memory_store.db`
-- `.venv/bin/mneme-memory-mcp`
-- `.venv/bin/mneme-memory-doctor`
+- `~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-mcp`
+- `~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-doctor`
 
 ## Check The Setup
 
 ```bash
-.venv/bin/mneme-memory-doctor
+~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-doctor
 ```
 
 The doctor checks:
@@ -58,7 +58,7 @@ Codex:
 
 ```toml
 [mcp_servers.mneme_memory]
-command = "/absolute/path/to/mneme-memory-mcp/.venv/bin/mneme-memory-mcp"
+command = "/Users/YOU/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-mcp"
 args = []
 startup_timeout_sec = 120
 
@@ -73,7 +73,7 @@ Claude Code:
   "mcpServers": {
     "mneme-memory": {
       "type": "stdio",
-      "command": "/absolute/path/to/mneme-memory-mcp/.venv/bin/mneme-memory-mcp",
+      "command": "/Users/YOU/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-mcp",
       "args": [],
       "env": {
         "HERMES_HOME": "/Users/YOU/.hermes"

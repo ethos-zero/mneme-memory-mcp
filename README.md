@@ -60,7 +60,7 @@ When run in an interactive terminal, the installer asks which memory profile you
 | Profile | Best For | Memory Home | Global Claude/Codex Instructions |
 | --- | --- | --- | --- |
 | `global` | A personal machine where every fresh Claude/Codex chat should share memory | `~/.hermes` by default | Yes |
-| `project` | A cloned repo, shared setup, or isolated workspace | `.env` value, defaulting to `./.mneme` | No |
+| `project` | A cloned repo, shared setup, or isolated workspace | `.env` value, defaulting to `~/.local/share/mneme-memory-mcp/projects/<repo>` | No |
 | `server` | Manual wiring or cautious evaluation | Your existing env/defaults | No |
 
 Non-interactive installs keep the previous default and use `global`.
@@ -69,8 +69,8 @@ The installer:
 
 - checks for `hermes`
 - installs Hermes Agent with the official Hermes installer if missing
-- creates a local `.venv`
-- installs `mneme-memory-mcp`
+- creates a managed Python venv under `~/.local/share/mneme-memory-mcp/venv`
+- installs `mneme-memory-mcp` into that managed venv
 - creates `~/.hermes/memories`
 - installs always-on Mneme instructions into global Claude and Codex guidance files
 - configures a Claude Code `SessionStart` hook that injects the shared Markdown memory into fresh sessions
@@ -116,13 +116,45 @@ You can start from `.env.example`.
 If that file has no `MNEME_HOME` or `HERMES_HOME`, Mneme adds:
 
 ```env
-MNEME_HOME=/absolute/path/to/mneme-memory-mcp/.mneme
+MNEME_HOME=/Users/YOU/.local/share/mneme-memory-mcp/projects/mneme-memory-mcp
 ```
 
 Check the setup:
 
 ```bash
-.venv/bin/mneme-memory-doctor
+~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-doctor
+```
+
+## Install Paths
+
+The installer does not create runtime folders on your Desktop. If you clone the repo on your Desktop, the visible Desktop item is just the cloned repo folder.
+
+Default installer paths:
+
+| Item | Default Path |
+| --- | --- |
+| Managed install directory | `~/.local/share/mneme-memory-mcp` |
+| Python virtualenv | `~/.local/share/mneme-memory-mcp/venv` |
+| Global memory profile | `~/.hermes` |
+| Project memory profile | `~/.local/share/mneme-memory-mcp/projects/<repo-name>` |
+| Project env file | `<repo>/.env` unless `--env-file` is passed |
+| Codex global instructions | `~/.codex/AGENTS.md` |
+| Claude global instructions | `~/.claude/CLAUDE.md` |
+| Claude memory hook | `~/.claude/hooks/mneme-memory-sessionstart.sh` |
+
+The installer prints the exact `install dir`, `venv dir`, `memory home`, and `env file` paths it selected.
+
+Override the managed install paths when needed:
+
+```bash
+./scripts/install.sh --install-dir /path/to/mneme-runtime
+./scripts/install.sh --venv-dir /path/to/mneme-venv
+```
+
+The default installer performs a normal package install, so the runtime does not depend on keeping the repo checkout on your Desktop. Contributors can use editable mode:
+
+```bash
+./scripts/install.sh --editable
 ```
 
 ## Agent Mesh

@@ -57,7 +57,7 @@ The delegated Claude call receives the current Mneme memory summary, so it start
 Both clients point at the same server command:
 
 ```bash
-/absolute/path/to/mneme-memory-mcp/.venv/bin/mneme-memory-mcp
+/Users/YOU/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-mcp
 ```
 
 And the same memory home:

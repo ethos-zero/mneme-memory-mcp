@@ -61,13 +61,13 @@ This profile reads memory settings from:
 If the file does not contain `MNEME_HOME` or `HERMES_HOME`, the installer adds a project-local default:
 
 ```env
-MNEME_HOME=/absolute/path/to/mneme-memory-mcp/.mneme
+MNEME_HOME=/Users/YOU/.local/share/mneme-memory-mcp/projects/mneme-memory-mcp
 ```
 
 Claude and Codex are configured to run:
 
 ```bash
-mneme-memory-env-mcp --env-file /path/to/.env --default-home /path/to/.mneme
+mneme-memory-env-mcp --env-file /path/to/.env --default-home /Users/YOU/.local/share/mneme-memory-mcp/projects/mneme-memory-mcp
 ```
 
 That launcher loads the `.env` memory settings when the MCP server starts. It does not write to `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`, or Claude `SessionStart` hooks.
@@ -92,13 +92,13 @@ mneme-memory add --target memory "durable fact"
 Check the continuity layer with:
 
 ```bash
-.venv/bin/mneme-memory-doctor
+~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-doctor
 ```
 
 or directly:
 
 ```bash
-.venv/bin/mneme-memory-continuity status
+~/.local/share/mneme-memory-mcp/venv/bin/mneme-memory-continuity status
 ```
 
 Expected healthy output includes:
