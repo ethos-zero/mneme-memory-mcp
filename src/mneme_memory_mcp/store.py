@@ -60,6 +60,8 @@ class Fact:
     scope: str = "global"
     key: str = ""
     version: str = ""
+    source: str = "manual"
+    provenance: str = ""
 
     def format(self) -> str:
         key = f"; key={self.key}" if self.key else ""
@@ -192,6 +194,13 @@ class SharedMemoryStore:
             raise ValueError("content must not be empty")
 
         self.ensure()
+        event_id = self._insert_event(
+            event_type="fact.add",
+            scope=scope,
+            source=source,
+            content=content,
+            trust_score=trust_score,
+        )
         fact_id = self._insert_fact(
             content,
             category,
@@ -202,16 +211,9 @@ class SharedMemoryStore:
             key=_normalize_key(key),
             version=version,
             source=source,
+            provenance=f"event:{event_id}",
         )
-        self.add_event(
-            event_type="fact.add",
-            scope=scope,
-            source=source,
-            content=content,
-            ref_table="facts",
-            ref_id=fact_id,
-            trust_score=trust_score,
-        )
+        self._update_event_ref(event_id, "facts", fact_id)
         if append_markdown:
             self.consolidate()
         return fact_id
@@ -228,24 +230,16 @@ class SharedMemoryStore:
         trust_score: float = 0.5,
     ) -> int:
         self.ensure()
-        with closing(self.connect()) as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO events (event_type, scope, source, content, ref_table, ref_id, trust_score)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event_type,
-                    scope,
-                    source,
-                    _normalize_content(content),
-                    ref_table,
-                    ref_id,
-                    max(0.0, min(1.0, float(trust_score))),
-                ),
-            )
-            conn.commit()
-            return int(cur.lastrowid)
+        event_id = self._insert_event(
+            event_type=event_type,
+            scope=scope,
+            source=source,
+            content=content,
+            ref_table=ref_table,
+            ref_id=ref_id,
+            trust_score=trust_score,
+        )
+        return event_id
 
     def add_episodic(
         self,
@@ -261,6 +255,13 @@ class SharedMemoryStore:
         if not text:
             raise ValueError("text must not be empty")
         self.ensure()
+        event_id = self._insert_event(
+            event_type="episodic.add",
+            scope="global",
+            source=source,
+            content=f"{session_id} {role}: {text[:240]}",
+            trust_score=trust_score,
+        )
         content_hash = hashlib.sha256(
             f"{source}\0{session_id}\0{role}\0{text}".encode("utf-8")
         ).hexdigest()
@@ -282,15 +283,7 @@ class SharedMemoryStore:
                 ).fetchone()
                 entry_id = int(row["entry_id"])
             conn.commit()
-        self.add_event(
-            event_type="episodic.add",
-            scope="global",
-            source=source,
-            content=f"{session_id} {role}: {text[:240]}",
-            ref_table="episodic_entries",
-            ref_id=entry_id,
-            trust_score=trust_score,
-        )
+        self._update_event_ref(event_id, "episodic_entries", entry_id)
         return entry_id
 
     def consolidate_session(
@@ -306,7 +299,7 @@ class SharedMemoryStore:
         summary = _session_summary(source, session_id, entries)
         summary_id = self.add_fact(
             summary,
-            category="conversation",
+            category="general",
             tags=f"capture,{source},session-summary,session:{session_id}",
             trust_score=0.45,
             memory_type="resource",
@@ -315,8 +308,11 @@ class SharedMemoryStore:
             source="capture",
         )
         for entry in _semantic_candidates(entries)[:max_semantic_facts]:
+            distilled = _distill_fact(str(entry["content"]))
+            if not distilled:
+                continue
             self.add_fact(
-                f"[distilled {source} memory] {entry['content']}",
+                f"[distilled {source} memory] {distilled}",
                 category="general",
                 tags=f"capture,{source},distilled,role:{entry['role']},session:{session_id}",
                 trust_score=0.50,
@@ -369,53 +365,72 @@ class SharedMemoryStore:
             conn.commit()
         return before - after
 
-    def list(self, limit: int = 25, include_superseded: bool = False) -> list[Fact]:
+    def list(
+        self,
+        limit: int = 25,
+        include_superseded: bool = False,
+        scope: MemoryScope = "project",
+    ) -> list[Fact]:
         self.ensure()
         limit = _bounded_limit(limit, upper=100)
-        where = "" if include_superseded else "WHERE superseded_by IS NULL"
+        clauses = []
+        params: list[object] = []
+        if not include_superseded:
+            clauses.append("superseded_by IS NULL")
+        clauses.append(f"scope IN ({','.join('?' for _ in _visible_scopes(scope))})")
+        params.extend(_visible_scopes(scope))
+        where = f"WHERE {' AND '.join(clauses)}"
         with closing(self.connect()) as conn:
             rows = conn.execute(
                 f"""
-                SELECT fact_id, content, category, tags, trust_score, memory_type, scope, key, version
+                SELECT fact_id, content, category, tags, trust_score, memory_type, scope, key, version, source, provenance
                 FROM facts
                 {where}
                 ORDER BY fact_id DESC
                 LIMIT ?
                 """,
-                (limit,),
+                (*params, limit),
             ).fetchall()
         return [_row_to_fact(row) for row in rows]
 
-    def search(self, query: str, limit: int = 10) -> list[Fact]:
+    def search(self, query: str, limit: int = 10, scope: MemoryScope = "project") -> list[Fact]:
         self.ensure()
         query = query.strip()
         if not query:
             return []
         limit = _bounded_limit(limit, upper=25)
+        scopes = _visible_scopes(scope)
+        scope_filter = ",".join("?" for _ in scopes)
         with closing(self.connect()) as conn:
+            rows: list[sqlite3.Row] = []
             try:
-                rows = conn.execute(
+                rows.extend(conn.execute(
                     """
                     SELECT f.fact_id, f.content, f.category, f.tags, f.trust_score,
-                           f.memory_type, f.scope, f.key, f.version
+                           f.memory_type, f.scope, f.key, f.version, f.source, f.provenance,
+                           f.updated_at
                     FROM facts f
                     JOIN facts_fts fts ON fts.rowid = f.fact_id
                     WHERE facts_fts MATCH ?
                       AND f.superseded_by IS NULL
                       AND f.memory_type != 'episodic'
-                    ORDER BY fts.rank, f.trust_score DESC, f.updated_at DESC
+                      AND f.scope IN ({scope_filter})
+                    ORDER BY f.trust_score DESC, f.updated_at DESC, f.fact_id DESC
                     LIMIT ?
-                    """,
-                    (_fts_query(query), limit),
-                ).fetchall()
+                    """.format(scope_filter=scope_filter),
+                    (_fts_query(query), *scopes, limit),
+                ).fetchall())
             except sqlite3.OperationalError:
-                rows = conn.execute(
-                    """
+                rows = []
+            rows.extend(conn.execute(
+                f"""
                     SELECT fact_id, content, category, tags, trust_score,
-                           memory_type, scope, key, version
+                           memory_type, scope, key, version, source, provenance,
+                           updated_at
                     FROM facts
                     WHERE superseded_by IS NULL
                       AND memory_type != 'episodic'
+                      AND scope IN ({scope_filter})
                       AND (
                         lower(content) LIKE lower(?)
                         OR lower(tags) LIKE lower(?)
@@ -425,27 +440,28 @@ class SharedMemoryStore:
                     ORDER BY trust_score DESC, updated_at DESC, fact_id DESC
                     LIMIT ?
                     """,
-                    (f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%", limit),
-                ).fetchall()
+                (*scopes, f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%", limit),
+            ).fetchall())
         return _dedupe_current([_row_to_fact(row) for row in rows])
 
-    def current(self, key: str) -> Fact | None:
+    def current(self, key: str, scope: MemoryScope = "project") -> Fact | None:
         self.ensure()
         normalized = _normalize_key(key)
         if not normalized:
             return None
+        scopes = _visible_scopes(scope)
         with closing(self.connect()) as conn:
-            row = conn.execute(
-                """
-                SELECT fact_id, content, category, tags, trust_score, memory_type, scope, key, version
+            rows = conn.execute(
+                f"""
+                SELECT fact_id, content, category, tags, trust_score, memory_type, scope, key, version, source, provenance
                 FROM facts
                 WHERE key = ? AND superseded_by IS NULL
-                ORDER BY version DESC, updated_at DESC, fact_id DESC
-                LIMIT 1
+                  AND scope IN ({','.join('?' for _ in scopes)})
                 """,
-                (normalized,),
-            ).fetchone()
-        return _row_to_fact(row) if row else None
+                (normalized, *scopes),
+            ).fetchall()
+        facts = [_row_to_fact(row) for row in rows]
+        return max(facts, key=_fact_freshness_key) if facts else None
 
     def update(
         self,
@@ -603,7 +619,7 @@ class SharedMemoryStore:
         with closing(self.connect()) as conn:
             row = conn.execute(
                 """
-                SELECT fact_id, content, category, tags, trust_score, memory_type, scope, key, version
+                SELECT fact_id, content, category, tags, trust_score, memory_type, scope, key, version, source, provenance
                 FROM facts
                 WHERE fact_id = ?
                 """,
@@ -622,27 +638,34 @@ class SharedMemoryStore:
         key: str = "",
         version: str = "",
         source: str = "manual",
+        provenance: str = "",
     ) -> int:
         with closing(self.connect()) as conn:
             supersedes_id = None
+            superseded_by = None
             if key:
-                row = conn.execute(
+                rows = conn.execute(
                     """
-                    SELECT fact_id FROM facts
+                    SELECT fact_id, content, category, tags, trust_score, memory_type, scope, key, version, source, provenance
+                    FROM facts
                     WHERE key = ? AND superseded_by IS NULL
-                    ORDER BY version DESC, updated_at DESC, fact_id DESC
-                    LIMIT 1
                     """,
                     (key,),
-                ).fetchone()
-                supersedes_id = int(row["fact_id"]) if row else None
+                ).fetchall()
+                facts = [_row_to_fact(row) for row in rows]
+                current = max(facts, key=_fact_freshness_key) if facts else None
+                if current is not None:
+                    if (_parse_version(version), 10**18) >= _fact_freshness_key(current):
+                        supersedes_id = current.fact_id
+                    else:
+                        superseded_by = current.fact_id
             try:
                 cur = conn.execute(
                     """
                     INSERT INTO facts
                         (content, category, tags, trust_score, memory_type, scope,
-                         key, version, supersedes_id, source)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         key, version, supersedes_id, superseded_by, source, provenance)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         content,
@@ -654,7 +677,9 @@ class SharedMemoryStore:
                         key,
                         version,
                         supersedes_id,
+                        superseded_by,
                         source,
+                        provenance,
                     ),
                 )
                 fact_id = int(cur.lastrowid)
@@ -671,6 +696,44 @@ class SharedMemoryStore:
                     (content,),
                 ).fetchone()
                 return int(row["fact_id"])
+
+    def _insert_event(
+        self,
+        *,
+        event_type: str,
+        scope: str = "global",
+        source: str = "manual",
+        content: str = "",
+        ref_table: str = "",
+        ref_id: int | None = None,
+        trust_score: float = 0.5,
+    ) -> int:
+        with closing(self.connect()) as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO events (event_type, scope, source, content, ref_table, ref_id, trust_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_type,
+                    scope,
+                    source,
+                    _normalize_content(content),
+                    ref_table,
+                    ref_id,
+                    max(0.0, min(1.0, float(trust_score))),
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def _update_event_ref(self, event_id: int, ref_table: str, ref_id: int) -> None:
+        with closing(self.connect()) as conn:
+            conn.execute(
+                "UPDATE events SET ref_table = ?, ref_id = ? WHERE event_id = ?",
+                (ref_table, ref_id, event_id),
+            )
+            conn.commit()
 
     def _target_path(self, target: MemoryTarget) -> Path:
         return self.user_file if target == "user" else self.memory_file
@@ -724,7 +787,8 @@ CREATE TABLE IF NOT EXISTS facts (
     version TEXT DEFAULT '',
     supersedes_id INTEGER,
     superseded_by INTEGER,
-    source TEXT DEFAULT 'manual'
+    source TEXT DEFAULT 'manual',
+    provenance TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -769,7 +833,10 @@ CREATE TABLE IF NOT EXISTS handoffs (
 
 CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts
     USING fts5(content, tags, content=facts, content_rowid=fact_id);
+"""
 
+
+TRIGGERS = """
 CREATE TRIGGER IF NOT EXISTS facts_ai AFTER INSERT ON facts BEGIN
     INSERT INTO facts_fts(rowid, content, tags)
         VALUES (new.fact_id, new.content, new.tags);
@@ -796,6 +863,13 @@ def format_facts(facts: list[Fact]) -> str:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        DROP TRIGGER IF EXISTS facts_ai;
+        DROP TRIGGER IF EXISTS facts_ad;
+        DROP TRIGGER IF EXISTS facts_au;
+        """
+    )
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(facts)").fetchall()}
     additions = {
         "memory_type": "TEXT DEFAULT 'semantic'",
@@ -805,18 +879,26 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "supersedes_id": "INTEGER",
         "superseded_by": "INTEGER",
         "source": "TEXT DEFAULT 'manual'",
+        "provenance": "TEXT DEFAULT ''",
     }
     for name, ddl in additions.items():
         if name not in columns:
             conn.execute(f"ALTER TABLE facts ADD COLUMN {name} {ddl}")
+    _quarantine_legacy_conversations(conn)
     conn.execute(
         """
         UPDATE facts
-        SET memory_type = CASE WHEN category = 'conversation' THEN 'resource' ELSE 'semantic' END,
+        SET memory_type = CASE
+                WHEN category = 'tool' THEN 'procedural'
+                WHEN category = 'project' THEN 'semantic'
+                ELSE 'semantic'
+            END,
             scope = CASE WHEN category = 'project' THEN 'project' ELSE 'global' END
-        WHERE memory_type IS NULL OR memory_type = '' OR category = 'conversation'
+        WHERE memory_type IS NULL OR memory_type = ''
         """
     )
+    _rebuild_fts(conn)
+    conn.executescript(TRIGGERS)
 
 
 def _row_to_fact(row: sqlite3.Row) -> Fact:
@@ -830,6 +912,8 @@ def _row_to_fact(row: sqlite3.Row) -> Fact:
         scope=str(row["scope"] or "global"),
         key=str(row["key"] or ""),
         version=str(row["version"] or ""),
+        source=str(row["source"] or "manual") if "source" in row.keys() else "manual",
+        provenance=str(row["provenance"] or "") if "provenance" in row.keys() else "",
     )
 
 
@@ -878,7 +962,7 @@ def _fts_query(query: str) -> str:
 def _dedupe_current(facts: list[Fact]) -> list[Fact]:
     seen: set[str] = set()
     kept: list[Fact] = []
-    for fact in facts:
+    for fact in sorted(facts, key=_fact_rank_key, reverse=True):
         marker = fact.key or f"content:{fact.content}"
         if marker in seen:
             continue
@@ -887,12 +971,122 @@ def _dedupe_current(facts: list[Fact]) -> list[Fact]:
     return kept
 
 
+def _visible_scopes(scope: str) -> tuple[str, ...]:
+    if scope == "global":
+        return ("global",)
+    if scope == "project":
+        return ("global", "project")
+    if scope == "handoff":
+        return ("handoff",)
+    if scope == "agent-private":
+        return ("agent-private",)
+    return ("global", "project")
+
+
+def _fact_rank_key(fact: Fact) -> tuple[float, tuple[int, ...], int]:
+    return (fact.trust_score, _parse_version(fact.version), fact.fact_id)
+
+
+def _fact_freshness_key(fact: Fact) -> tuple[tuple[int, ...], int]:
+    return (_parse_version(fact.version), fact.fact_id)
+
+
+def _parse_version(version: str) -> tuple[int, ...]:
+    text = (version or "").strip().lower()
+    if not text:
+        return (0,)
+    if text in {"now", "current", "latest"}:
+        return (9999, 12, 31, 23, 59, 59)
+    parts = [int(part) for part in re.findall(r"\d+", text)]
+    if not parts:
+        return (0,)
+    return tuple(parts)
+
+
+def _quarantine_legacy_conversations(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT fact_id, content, tags, trust_score, created_at
+        FROM facts
+        WHERE category = 'conversation'
+        """
+    ).fetchall()
+    for row in rows:
+        content = _normalize_content(str(row["content"]))
+        if not content:
+            conn.execute("DELETE FROM facts WHERE fact_id = ?", (row["fact_id"],))
+            continue
+        tags = str(row["tags"] or "legacy,conversation")
+        source = _tag_value(tags, "source") or ("codex" if "codex" in tags else "claude" if "claude" in tags else "legacy")
+        session_id = _tag_value(tags, "session") or f"legacy-fact-{row['fact_id']}"
+        role = _tag_value(tags, "role") or "unknown"
+        content_hash = hashlib.sha256(
+            f"legacy\0{row['fact_id']}\0{content}".encode("utf-8")
+        ).hexdigest()
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO episodic_entries
+                (source, session_id, role, content, content_hash, tags, trust_score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                source,
+                session_id,
+                role,
+                content,
+                content_hash,
+                tags,
+                max(0.0, min(1.0, float(row["trust_score"] or 0.30))),
+                row["created_at"],
+            ),
+        )
+        entry = conn.execute(
+            "SELECT entry_id FROM episodic_entries WHERE content_hash = ?",
+            (content_hash,),
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO events (event_type, scope, source, content, ref_table, ref_id, trust_score, created_at)
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE NOT EXISTS (
+                SELECT 1 FROM events
+                WHERE event_type = ? AND ref_table = ? AND ref_id = ?
+            )
+            """,
+            (
+                "migration.quarantine_conversation",
+                "global",
+                "migration",
+                content[:240],
+                "episodic_entries",
+                int(entry["entry_id"]) if entry else None,
+                max(0.0, min(1.0, float(row["trust_score"] or 0.30))),
+                row["created_at"],
+                "migration.quarantine_conversation",
+                "episodic_entries",
+                int(entry["entry_id"]) if entry else None,
+            ),
+        )
+        conn.execute("DELETE FROM facts WHERE fact_id = ?", (row["fact_id"],))
+
+
+def _tag_value(tags: str, name: str) -> str:
+    match = re.search(rf"(?:^|,){re.escape(name)}:([^,]+)", tags)
+    return match.group(1).strip() if match else ""
+
+
+def _rebuild_fts(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("INSERT INTO facts_fts(facts_fts) VALUES('rebuild')")
+    except sqlite3.OperationalError:
+        pass
+
+
 def _session_summary(source: str, session_id: str, entries: list[sqlite3.Row]) -> str:
-    highlights = [str(row["content"]) for row in entries[:4]]
-    joined = " | ".join(_truncate(item, 180) for item in highlights)
+    roles = sorted({str(row["role"] or "unknown") for row in entries})
     return (
         f"[{source} session summary] session={session_id}: "
-        f"{len(entries)} archived turns. Highlights: {joined}"
+        f"{len(entries)} archived turns; roles={','.join(roles)}. Raw turns are in episodic archive."
     )
 
 
@@ -919,6 +1113,13 @@ def _semantic_candidates(entries: list[sqlite3.Row]) -> list[sqlite3.Row]:
 
 def _short_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _distill_fact(text: str) -> str:
+    text = _normalize_content(text)
+    text = re.sub(r"(?i)^(please\s+)?remember\s+(that\s+)?", "", text)
+    text = re.sub(r"(?i)^(note\s+that|important:)\s*", "", text)
+    return _truncate(text, 420)
 
 
 def _truncate(text: str, limit: int) -> str:

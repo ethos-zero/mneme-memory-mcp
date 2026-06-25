@@ -280,7 +280,6 @@ def install_claude_mcp_config(paths: ContinuityPaths) -> bool:
 
 def install_codex_notify_wrapper(paths: ContinuityPaths) -> None:
     if not paths.codex_config.exists():
-        original_command = ""
         values: list[str] = []
         config_text = ""
     else:
@@ -289,18 +288,16 @@ def install_codex_notify_wrapper(paths: ContinuityPaths) -> None:
         if values and values[0] == str(paths.codex_notify_wrapper):
             if paths.codex_notify_wrapper.exists():
                 return
-            original_command = ""
-        else:
-            original_command = values[0] if values else ""
+            values = []
 
     paths.codex_notify_wrapper.parent.mkdir(parents=True, exist_ok=True)
     paths.codex_notify_wrapper.write_text(
-        codex_notify_wrapper_script(paths, original_command),
+        codex_notify_wrapper_script(paths, values),
         encoding="utf-8",
     )
     _make_runnable(paths.codex_notify_wrapper)
 
-    updated_values = [str(paths.codex_notify_wrapper), *values[1:]] if values else [str(paths.codex_notify_wrapper)]
+    updated_values = [str(paths.codex_notify_wrapper)]
     updated = _write_notify_values(config_text, updated_values)
     if updated != config_text:
         paths.codex_config.write_text(updated, encoding="utf-8")
@@ -368,11 +365,11 @@ exit 0
 """
 
 
-def codex_notify_wrapper_script(paths: ContinuityPaths, original_command: str) -> str:
+def codex_notify_wrapper_script(paths: ContinuityPaths, original_command: list[str]) -> str:
     if os.name == "nt":
         return codex_notify_wrapper_cmd_script(paths, original_command)
     capture_cli = _console_script(paths.bin_dir, "mneme-memory-capture")
-    original = shlex.quote(original_command)
+    original = " ".join(shlex.quote(part) for part in original_command)
     return f"""#!/usr/bin/env bash
 set +e
 
@@ -382,9 +379,9 @@ export HERMES_HOME="$MEMORY_HOME"
 
 {shlex.quote(str(capture_cli))} codex --memory-home "$MEMORY_HOME" --since-minutes 360 --limit-files 12 --quiet >/dev/null 2>&1
 
-ORIGINAL_NOTIFY={original}
-if [ -n "$ORIGINAL_NOTIFY" ] && [ -x "$ORIGINAL_NOTIFY" ]; then
-  exec "$ORIGINAL_NOTIFY" "$@"
+ORIGINAL_NOTIFY=({original})
+if [ "${{#ORIGINAL_NOTIFY[@]}}" -gt 0 ] && [ -x "${{ORIGINAL_NOTIFY[0]}}" ]; then
+  exec "${{ORIGINAL_NOTIFY[@]}}" "$@"
 fi
 
 exit 0
@@ -464,10 +461,10 @@ exit /b 0
 """
 
 
-def codex_notify_wrapper_cmd_script(paths: ContinuityPaths, original_command: str) -> str:
+def codex_notify_wrapper_cmd_script(paths: ContinuityPaths, original_command: list[str]) -> str:
     python = _cmd_literal(str(_python_executable(paths.bin_dir)))
     memory_home = _cmd_literal(str(paths.memory_home))
-    original = _cmd_literal(original_command)
+    original = " ".join(f'"{_cmd_literal(part)}"' for part in original_command)
     return f"""@echo off
 setlocal
 
@@ -485,12 +482,16 @@ set "HERMES_HOME=%MEMORY_HOME%"
 
 "{python}" -m mneme_memory_mcp.capture codex --memory-home "%MEMORY_HOME%" --since-minutes 360 --limit-files 12 --quiet >nul 2>nul
 
-set "ORIGINAL_NOTIFY={original}"
+set ORIGINAL_NOTIFY={original}
 if not "%ORIGINAL_NOTIFY%"=="" (
-  if exist "%ORIGINAL_NOTIFY%" (
-    "%ORIGINAL_NOTIFY%" %*
+  for %%A in (%ORIGINAL_NOTIFY%) do (
+    if exist "%%~A" (
+      %ORIGINAL_NOTIFY% %*
+    )
+    goto :done_notify
   )
 )
+:done_notify
 exit /b 0
 """
 

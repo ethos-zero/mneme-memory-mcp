@@ -22,17 +22,21 @@ def memory_summary() -> str:
 
 
 @mcp.tool()
-def memory_search(query: str, limit: int = 10) -> str:
+def memory_search(
+    query: str,
+    limit: int = 10,
+    scope: Literal["global", "project", "agent-private", "handoff"] = "project",
+) -> str:
     """Search the shared memory fact store."""
 
-    return format_facts(store().search(query=query, limit=limit))
+    return format_facts(store().search(query=query, limit=limit, scope=scope))
 
 
 @mcp.tool()
-def memory_list(limit: int = 25) -> str:
+def memory_list(limit: int = 25, scope: Literal["global", "project", "agent-private", "handoff"] = "project") -> str:
     """List recent facts from the shared memory fact store."""
 
-    return format_facts(store().list(limit=limit))
+    return format_facts(store().list(limit=limit, scope=scope))
 
 
 @mcp.tool()
@@ -69,10 +73,10 @@ def memory_add(
 
 
 @mcp.tool()
-def memory_current(key: str) -> str:
+def memory_current(key: str, scope: Literal["global", "project", "agent-private", "handoff"] = "project") -> str:
     """Resolve the current value for a supersession key."""
 
-    fact = store().current(key)
+    fact = store().current(key, scope=scope)
     return fact.format() if fact else "(no current fact)"
 
 

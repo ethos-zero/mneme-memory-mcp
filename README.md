@@ -248,7 +248,11 @@ Mneme stores memory in three local forms:
 
 `USER.md` and `MEMORY.md` are compact generated views. The database is the source of truth: semantic facts, project facts, procedural runbooks, resource pointers, structured handoffs, and a capped episodic archive live there. Automatic conversation captures write raw turns to `episodic_entries`, not the main fact table. Mneme then writes one session summary plus a few high-value distilled facts, so always-loaded context does not grow with every transcript turn.
 
-Facts can carry a stable `key` and optional `version`. When a newer fact uses the same key, Mneme marks the older one superseded and `memory_current` / `mneme-memory current` returns the deterministic current value.
+Upgrading an older 0.6.x store quarantines legacy `category='conversation'` raw transcript rows into `episodic_entries` and removes them from searchable facts. The migration is idempotent and rebuilds FTS after quarantine so stale transcript text cannot remain searchable.
+
+Facts can carry a stable `key` and optional `version`. Mneme parses numeric/date-like version strings, marks older facts superseded, and `memory_current` / `mneme-memory current` returns the deterministic current value.
+
+Retrieval is scope-gated. Project reads see `global` + `project`; global, handoff, and agent-private scopes are isolated unless explicitly requested. Search uses the local FTS5 lexical path plus a LIKE fallback, merges/dedupes results, and ranks current in-scope facts by trust and freshness. Optional semantic/vector and graph indexes are intentionally deferred behind a future optional path, not required dependencies.
 
 It is designed to sit next to Hermes, but the MCP memory server does not require Hermes Agent to be running.
 
@@ -257,8 +261,8 @@ It is designed to sit next to Hermes, but the MCP memory server does not require
 The MCP server exposes:
 
 - `memory_summary` - read the current Markdown memory summary
-- `memory_search` - search the SQLite fact store
-- `memory_list` - list recent facts
+- `memory_search` - search the SQLite fact store with scope visibility
+- `memory_list` - list recent facts with scope visibility
 - `memory_add` - add a durable memory
 - `memory_update` - update a fact by id
 - `memory_remove` - remove a fact by id

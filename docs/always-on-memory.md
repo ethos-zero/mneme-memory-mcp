@@ -70,11 +70,17 @@ The capture hook is also installed into Claude Code `Stop` and `SessionEnd` hook
 
 On Windows this wrapper is `%USERPROFILE%\.codex\mneme-memory-notify.cmd`.
 
-The wrapper archives recent Codex transcript snippets, distills compact searchable summaries, then forwards to the previously configured notify command when one existed.
+The wrapper archives recent Codex transcript snippets, distills compact searchable summaries, then forwards to the previously configured notify command when one existed. In `~/.codex/config.toml`, Mneme should be the first and only configured `notify` command; the previous notify chain is stored inside the wrapper:
+
+```toml
+notify = ["/Users/you/.codex/mneme-memory-notify.sh"]
+```
 
 If an existing compatible Hermes/Mneme memory hook is already present, Mneme keeps it and avoids adding a duplicate.
 
 Automatic captures go into SQLite's separate `episodic_entries` archive with `capture`, client, role, and session tags. Raw turns are capped and age-pruned, and they are not appended to `USER.md`, `MEMORY.md`, or the main fact table. Mneme consolidates each session into one compact summary plus a few high-value distilled facts that are searchable through `memory_search` and `mneme-memory search`.
+
+When an older 0.6.x database is opened, legacy raw `category='conversation'` facts are migrated into `episodic_entries`, removed from `facts`, and the FTS index is rebuilt. Real semantic/project/tool facts stay in `facts`.
 
 `USER.md` and `MEMORY.md` are generated working-set views. Regenerate them at any time:
 
@@ -88,6 +94,15 @@ For mutable facts, write a stable key and resolve the current value deterministi
 mneme-memory add --key test-command --version 2026-06-25 "The test command is python -m unittest discover -s tests"
 mneme-memory current test-command
 ```
+
+Reads are scope-gated:
+
+```bash
+mneme-memory search "test command" --scope project
+mneme-memory search "handoff" --scope handoff
+```
+
+Project scope sees global + project facts. Agent-private and handoff facts require their matching scope.
 
 For cross-agent continuation, write and read structured handoffs:
 

@@ -17,9 +17,21 @@ def build_parser() -> argparse.ArgumentParser:
     search = subparsers.add_parser("search", help="Search durable facts.")
     search.add_argument("query", help="Search terms.")
     search.add_argument("--limit", type=int, default=10, help="Maximum results.")
+    search.add_argument(
+        "--scope",
+        choices=("global", "project", "agent-private", "handoff"),
+        default="project",
+        help="Read visibility scope.",
+    )
 
     recent = subparsers.add_parser("list", help="List recent durable facts.")
     recent.add_argument("--limit", type=int, default=25, help="Maximum results.")
+    recent.add_argument(
+        "--scope",
+        choices=("global", "project", "agent-private", "handoff"),
+        default="project",
+        help="Read visibility scope.",
+    )
 
     add = subparsers.add_parser("add", help="Add a durable fact.")
     add.add_argument("content", nargs="+", help="Fact content to remember.")
@@ -53,6 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     current = subparsers.add_parser("current", help="Resolve the current fact for a supersession key.")
     current.add_argument("key")
+    current.add_argument(
+        "--scope",
+        choices=("global", "project", "agent-private", "handoff"),
+        default="project",
+        help="Read visibility scope.",
+    )
 
     subparsers.add_parser("consolidate", help="Regenerate compact USER.md and MEMORY.md views.")
 
@@ -82,9 +100,9 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "summary":
         print(store.summary())
     elif args.command == "search":
-        print(format_facts(store.search(query=args.query, limit=args.limit)))
+        print(format_facts(store.search(query=args.query, limit=args.limit, scope=args.scope)))
     elif args.command == "list":
-        print(format_facts(store.list(limit=args.limit)))
+        print(format_facts(store.list(limit=args.limit, scope=args.scope)))
     elif args.command == "add":
         content = " ".join(args.content)
         fact_id = store.add(
@@ -99,7 +117,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(f"saved fact {fact_id} to {args.target} memory")
     elif args.command == "current":
-        fact = store.current(args.key)
+        fact = store.current(args.key, scope=args.scope)
         print(fact.format() if fact else "(no current fact)")
     elif args.command == "consolidate":
         store.consolidate()

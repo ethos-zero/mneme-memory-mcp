@@ -62,6 +62,7 @@ class ContinuityTest(unittest.TestCase):
             settings = json.loads(paths.claude_settings.read_text(encoding="utf-8"))
             claude_user_config = json.loads(paths.claude_user_config.read_text(encoding="utf-8"))
             codex_config = paths.codex_config.read_text(encoding="utf-8")
+            notify_wrapper = paths.codex_notify_wrapper.read_text(encoding="utf-8")
             notify_values = _read_notify_values(codex_config)
             hook_executable = os.access(paths.claude_hook, os.X_OK)
             prompt_hook_executable = os.access(paths.claude_prompt_hook, os.X_OK)
@@ -94,8 +95,9 @@ class ContinuityTest(unittest.TestCase):
             ["-m", "mneme_memory_mcp"],
         )
         self.assertEqual(settings["hooks"]["Stop"][0]["hooks"][0]["command"], str(paths.claude_capture_hook))
-        self.assertEqual(notify_values[0], str(paths.codex_notify_wrapper))
-        self.assertIn("turn-ended", notify_values)
+        self.assertEqual(notify_values, [str(paths.codex_notify_wrapper)])
+        self.assertIn("/usr/local/bin/existing-notify", notify_wrapper)
+        self.assertIn("turn-ended", notify_wrapper)
         self.assertEqual(codex_config.count("notify ="), 1)
 
     def test_existing_hermes_session_hook_counts_as_compatible(self) -> None:
