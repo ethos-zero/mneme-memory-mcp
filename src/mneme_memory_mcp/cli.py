@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from .store import MemoryCategory, MemoryTarget, SharedMemoryStore, format_facts
+from .store import MemoryCategory, MemoryScope, MemoryTarget, MemoryType, SharedMemoryStore, format_facts
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,6 +36,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fact category.",
     )
     add.add_argument("--tags", default="", help="Comma-separated tags.")
+    add.add_argument(
+        "--memory-type",
+        choices=("semantic", "episodic", "procedural", "resource", "handoff"),
+        default="semantic",
+        help="Typed memory layer.",
+    )
+    add.add_argument(
+        "--scope",
+        choices=("global", "project", "agent-private", "handoff"),
+        default=None,
+        help="Memory visibility scope.",
+    )
+    add.add_argument("--key", default="", help="Stable supersession key for mutable facts.")
+    add.add_argument("--version", default="", help="Optional version or freshness signal.")
+
+    current = subparsers.add_parser("current", help="Resolve the current fact for a supersession key.")
+    current.add_argument("key")
+
+    subparsers.add_parser("consolidate", help="Regenerate compact USER.md and MEMORY.md views.")
+
+    handoff = subparsers.add_parser("handoff", help="Read or write structured handoffs.")
+    handoff_sub = handoff.add_subparsers(dest="handoff_command", required=True)
+    handoff_latest = handoff_sub.add_parser("latest", help="Print the latest handoff for a scope.")
+    handoff_latest.add_argument("--scope", default="global")
+    handoff_write = handoff_sub.add_parser("write", help="Write a structured handoff.")
+    handoff_write.add_argument("--scope", default="global")
+    handoff_write.add_argument("--goal", required=True)
+    handoff_write.add_argument("--repo-state", default="")
+    handoff_write.add_argument("--files-touched", default="")
+    handoff_write.add_argument("--decisions", default="")
+    handoff_write.add_argument("--blockers", default="")
+    handoff_write.add_argument("--assumptions", default="")
+    handoff_write.add_argument("--validation", default="")
+    handoff_write.add_argument("--next-steps", default="")
+    handoff_write.add_argument("--evidence", default="")
 
     return parser
 
@@ -57,11 +92,46 @@ def main(argv: list[str] | None = None) -> None:
             target=args.target,
             category=args.category,
             tags=args.tags,
+            memory_type=args.memory_type,
+            scope=args.scope,
+            key=args.key,
+            version=args.version,
         )
         print(f"saved fact {fact_id} to {args.target} memory")
+    elif args.command == "current":
+        fact = store.current(args.key)
+        print(fact.format() if fact else "(no current fact)")
+    elif args.command == "consolidate":
+        store.consolidate()
+        print("regenerated USER.md and MEMORY.md")
+    elif args.command == "handoff":
+        if args.handoff_command == "latest":
+            handoff = store.latest_handoff(args.scope)
+            print(handoff.format() if handoff else "(no handoff)")
+        elif args.handoff_command == "write":
+            handoff_id = store.write_handoff(
+                scope=args.scope,
+                goal=args.goal,
+                repo_state=args.repo_state,
+                files_touched=args.files_touched,
+                decisions=args.decisions,
+                blockers=args.blockers,
+                assumptions=args.assumptions,
+                validation=args.validation,
+                next_steps=args.next_steps,
+                evidence=args.evidence,
+            )
+            print(f"saved handoff {handoff_id}")
 
 
-__all__ = ["build_parser", "main", "MemoryCategory", "MemoryTarget"]
+__all__ = [
+    "build_parser",
+    "main",
+    "MemoryCategory",
+    "MemoryScope",
+    "MemoryTarget",
+    "MemoryType",
+]
 
 
 if __name__ == "__main__":

@@ -41,6 +41,10 @@ def memory_add(
     target: Literal["user", "memory"] = "memory",
     category: Literal["user_pref", "project", "tool", "general", "conversation"] = "general",
     tags: str = "",
+    memory_type: Literal["semantic", "episodic", "procedural", "resource", "handoff"] = "semantic",
+    scope: Literal["global", "project", "agent-private", "handoff"] | None = None,
+    key: str = "",
+    version: str = "",
 ) -> str:
     """Add a durable fact to shared memory.
 
@@ -49,10 +53,35 @@ def memory_add(
     """
 
     try:
-        fact_id = store().add(content=content, target=target, category=category, tags=tags)
+        fact_id = store().add(
+            content=content,
+            target=target,
+            category=category,
+            tags=tags,
+            memory_type=memory_type,
+            scope=scope,
+            key=key,
+            version=version,
+        )
     except ValueError as exc:
         return f"error: {exc}"
     return f"saved fact {fact_id} to {target} memory"
+
+
+@mcp.tool()
+def memory_current(key: str) -> str:
+    """Resolve the current value for a supersession key."""
+
+    fact = store().current(key)
+    return fact.format() if fact else "(no current fact)"
+
+
+@mcp.tool()
+def memory_consolidate() -> str:
+    """Regenerate compact USER.md and MEMORY.md working-set views."""
+
+    store().consolidate()
+    return "regenerated USER.md and MEMORY.md"
 
 
 @mcp.tool()
@@ -81,6 +110,44 @@ def memory_remove(fact_id: int) -> str:
 
     ok = store().remove(fact_id=fact_id)
     return "removed" if ok else f"fact {fact_id} not found"
+
+
+@mcp.tool()
+def memory_handoff_write(
+    goal: str,
+    scope: str = "global",
+    repo_state: str = "",
+    files_touched: str = "",
+    decisions: str = "",
+    blockers: str = "",
+    assumptions: str = "",
+    validation: str = "",
+    next_steps: str = "",
+    evidence: str = "",
+) -> str:
+    """Write a structured handoff for another agent/session."""
+
+    handoff_id = store().write_handoff(
+        scope=scope,
+        goal=goal,
+        repo_state=repo_state,
+        files_touched=files_touched,
+        decisions=decisions,
+        blockers=blockers,
+        assumptions=assumptions,
+        validation=validation,
+        next_steps=next_steps,
+        evidence=evidence,
+    )
+    return f"saved handoff {handoff_id}"
+
+
+@mcp.tool()
+def memory_handoff_latest(scope: str = "global") -> str:
+    """Return the latest structured handoff for a scope."""
+
+    handoff = store().latest_handoff(scope)
+    return handoff.format() if handoff else "(no handoff)"
 
 
 @mcp.tool()

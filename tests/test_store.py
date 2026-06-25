@@ -59,6 +59,49 @@ class SharedMemoryStoreTest(unittest.TestCase):
         self.assertEqual(store.search("Buffer")[0].trust_score, 0.35)
         self.assertNotIn("Captured transcript snippet", store.summary())
 
+    def test_episodic_capture_distills_summary_not_raw_fact(self) -> None:
+        store = self.make_store()
+
+        store.add_episodic(
+            source="codex",
+            session_id="session-1",
+            role="user",
+            text="Please remember that the test command is python -m unittest.",
+            tags="capture,codex",
+        )
+        store.consolidate_session(source="codex", session_id="session-1")
+
+        self.assertEqual(store.search("archived turns")[0].memory_type, "resource")
+        self.assertIn("test command", store.search("test command")[0].content)
+
+    def test_supersession_resolves_current_key(self) -> None:
+        store = self.make_store()
+
+        old_id = store.add("Test command is pnpm test.", key="test-command", version="1")
+        new_id = store.add("Test command is bun test.", key="test-command", version="2")
+
+        current = store.current("test-command")
+        self.assertIsNotNone(current)
+        self.assertEqual(current.fact_id, new_id)
+        self.assertNotIn(old_id, [fact.fact_id for fact in store.search("test command", limit=10)])
+
+    def test_handoff_round_trip(self) -> None:
+        store = self.make_store()
+
+        handoff_id = store.write_handoff(
+            scope="project",
+            goal="Finish memory overhaul.",
+            files_touched="src/mneme_memory_mcp/store.py",
+            validation="tests pending",
+            next_steps="run unittest",
+        )
+        handoff = store.latest_handoff("project")
+
+        self.assertEqual(handoff_id, 1)
+        self.assertIsNotNone(handoff)
+        self.assertIn("Finish memory overhaul", handoff.format())
+        self.assertIn("run unittest", store.summary())
+
     def test_update_and_remove(self) -> None:
         store = self.make_store()
         fact_id = store.add("Old fact.", target="memory")

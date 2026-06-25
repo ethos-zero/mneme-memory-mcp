@@ -60,7 +60,7 @@ class CaptureStats:
 
     def format(self) -> str:
         return (
-            f"{self.source}: indexed {self.snippets_indexed} snippets "
+            f"{self.source}: archived {self.snippets_indexed} snippets "
             f"from {self.files_scanned} files"
         )
 
@@ -175,20 +175,26 @@ def _capture_source(
     store: SharedMemoryStore,
 ) -> CaptureStats:
     indexed = 0
+    sessions: set[str] = set()
     for path in files:
         try:
             snippets = parser(path)
         except OSError:
             continue
         for snippet in snippets:
-            store.add_fact(
-                snippet.fact_content(),
-                category="conversation",
+            store.add_episodic(
+                source=snippet.source,
+                session_id=snippet.session_id,
+                role=snippet.role,
+                text=snippet.text,
                 tags=snippet.tags(),
-                append_markdown=False,
                 trust_score=0.35,
             )
+            sessions.add(snippet.session_id)
             indexed += 1
+    for session_id in sessions:
+        store.consolidate_session(source=source, session_id=session_id)
+    store.prune_episodic()
     return CaptureStats(source=source, files_scanned=len(files), snippets_indexed=indexed)
 
 
@@ -207,14 +213,18 @@ def _capture_codex_prompt_history(store: SharedMemoryStore) -> CaptureStats:
         if not _should_keep(text):
             continue
         snippet = ConversationSnippet("codex", "prompt-history", "user", text)
-        store.add_fact(
-            snippet.fact_content(),
-            category="conversation",
+        store.add_episodic(
+            source=snippet.source,
+            session_id=snippet.session_id,
+            role=snippet.role,
+            text=snippet.text,
             tags="capture,codex,prompt-history,role:user",
-            append_markdown=False,
             trust_score=0.30,
         )
         indexed += 1
+    if indexed:
+        store.consolidate_session(source="codex", session_id="prompt-history")
+        store.prune_episodic()
     return CaptureStats(source="codex-prompt-history", files_scanned=1, snippets_indexed=indexed)
 
 
@@ -357,7 +367,7 @@ def _should_keep(text: str) -> bool:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mneme-memory-capture",
-        description="Index local Claude and Codex conversation transcripts into Mneme search.",
+        description="Archive local Claude/Codex transcripts and distill compact Mneme summaries.",
     )
     parser.add_argument("source", nargs="?", choices=("all", "claude", "codex"), default="all")
     parser.add_argument("--memory-home", type=Path, default=None)

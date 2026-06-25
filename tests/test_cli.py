@@ -33,6 +33,39 @@ class CliTest(unittest.TestCase):
         self.assertIn("Codex and Claude share Mneme.", summary)
         self.assertIn("Codex and Claude share Mneme.", search)
 
+    def test_current_and_handoff_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            memory_home = Path(tmp) / "memory"
+
+            self.run_cli(
+                ["add", "--key", "test-command", "--version", "1", "Test command is pnpm test."],
+                memory_home,
+            )
+            self.run_cli(
+                ["add", "--key", "test-command", "--version", "2", "Test command is bun test."],
+                memory_home,
+            )
+            current = self.run_cli(["current", "test-command"], memory_home)
+            write = self.run_cli(
+                [
+                    "handoff",
+                    "write",
+                    "--scope",
+                    "project",
+                    "--goal",
+                    "Finish memory overhaul",
+                    "--next-steps",
+                    "run checks",
+                ],
+                memory_home,
+            )
+            latest = self.run_cli(["handoff", "latest", "--scope", "project"], memory_home)
+
+        self.assertIn("bun test", current)
+        self.assertNotIn("pnpm test", current)
+        self.assertIn("saved handoff 1", write)
+        self.assertIn("Finish memory overhaul", latest)
+
 
 if __name__ == "__main__":
     unittest.main()

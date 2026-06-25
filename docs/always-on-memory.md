@@ -7,11 +7,11 @@ Global mode is meant to make every configured agent answer from the same remembe
 The installer gives Claude Code and Codex a persistent memory habit in six layers:
 
 1. Shared local memory files in `~/.hermes/memories`
-2. Shared searchable facts in `~/.hermes/memory_store.db`
+2. Shared typed facts, events, handoffs, and episodic archive in `~/.hermes/memory_store.db`
 3. Mneme MCP tools in Claude and Codex
 4. Global client instructions that tell new chats to consult Mneme before substantive answers
 5. A Claude `UserPromptSubmit` hook that adds shared memory context before every future prompt
-6. Local capture hooks that index recent Claude/Codex transcript snippets into searchable memory
+6. Local capture hooks that archive recent Claude/Codex transcript snippets and distill compact searchable summaries
 
 For Claude Code, Mneme also adds a `SessionStart` hook that prints the Markdown memory summary into every fresh Claude session and a `UserPromptSubmit` hook that injects the current memory summary plus recent durable facts before future prompts.
 
@@ -70,11 +70,31 @@ The capture hook is also installed into Claude Code `Stop` and `SessionEnd` hook
 
 On Windows this wrapper is `%USERPROFILE%\.codex\mneme-memory-notify.cmd`.
 
-The wrapper indexes recent Codex transcript snippets, then forwards to the previously configured notify command when one existed.
+The wrapper archives recent Codex transcript snippets, distills compact searchable summaries, then forwards to the previously configured notify command when one existed.
 
 If an existing compatible Hermes/Mneme memory hook is already present, Mneme keeps it and avoids adding a duplicate.
 
-Automatic captures go into SQLite as lower-trust `conversation` facts with `capture`, client, role, and session tags. They are searchable through `memory_search` and `mneme-memory search`, but they are not appended to `USER.md` or `MEMORY.md`.
+Automatic captures go into SQLite's separate `episodic_entries` archive with `capture`, client, role, and session tags. Raw turns are capped and age-pruned, and they are not appended to `USER.md`, `MEMORY.md`, or the main fact table. Mneme consolidates each session into one compact summary plus a few high-value distilled facts that are searchable through `memory_search` and `mneme-memory search`.
+
+`USER.md` and `MEMORY.md` are generated working-set views. Regenerate them at any time:
+
+```bash
+mneme-memory consolidate
+```
+
+For mutable facts, write a stable key and resolve the current value deterministically:
+
+```bash
+mneme-memory add --key test-command --version 2026-06-25 "The test command is python -m unittest discover -s tests"
+mneme-memory current test-command
+```
+
+For cross-agent continuation, write and read structured handoffs:
+
+```bash
+mneme-memory handoff write --scope project --goal "Finish the memory overhaul" --next-steps "run checks and commit locally"
+mneme-memory handoff latest --scope project
+```
 
 ## Project/Env-Scoped Memory
 
@@ -125,6 +145,7 @@ Fresh Claude and Codex chats should follow this order:
 mneme-memory summary
 mneme-memory search "query terms"
 mneme-memory add --target memory "durable fact"
+mneme-memory consolidate
 mneme-memory-capture all
 ```
 

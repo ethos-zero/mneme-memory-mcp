@@ -109,8 +109,8 @@ and configures local hooks that keep the shared memory alive across fresh sessio
 
 - Claude `SessionStart` injects USER.md and MEMORY.md for fresh sessions.
 - Claude `UserPromptSubmit` injects shared memory context before future prompts.
-- Claude `Stop` and `SessionEnd` index recent transcript snippets into Mneme search.
-- Codex `notify` is wrapped so each turn can index recent Codex transcript snippets, then forward to the previous notify command.
+- Claude `Stop` and `SessionEnd` archive recent transcript snippets and distill compact Mneme summaries.
+- Codex `notify` is wrapped so each turn can archive recent Codex transcript snippets, distill compact summaries, then forward to the previous notify command.
 
 That means fresh local Claude and Codex chats should begin by checking the same memory layer before answering, then keep improving the layer through durable memories and searchable conversation capture.
 
