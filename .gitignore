@@ -3,11 +3,15 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+.codex-*.md
+.codex-run*.log
 dist/
 build/
 *.egg-info/
 memory_store.db*
 tmp/
+MEMORY-BEST-PRACTICES.txt
+*.agent.log
 .env
 .env.*
 !.env.example
