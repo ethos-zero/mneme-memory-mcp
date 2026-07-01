@@ -255,13 +255,6 @@ class SharedMemoryStore:
         if not text:
             raise ValueError("text must not be empty")
         self.ensure()
-        event_id = self._insert_event(
-            event_type="episodic.add",
-            scope="global",
-            source=source,
-            content=f"{session_id} {role}: {text[:240]}",
-            trust_score=trust_score,
-        )
         content_hash = hashlib.sha256(
             f"{source}\0{session_id}\0{role}\0{text}".encode("utf-8")
         ).hexdigest()
@@ -276,14 +269,28 @@ class SharedMemoryStore:
                     (source, session_id, role, text, content_hash, tags, trust_score),
                 )
                 entry_id = int(cur.lastrowid)
+                is_new = True
             except sqlite3.IntegrityError:
                 row = conn.execute(
                     "SELECT entry_id FROM episodic_entries WHERE content_hash = ?",
                     (content_hash,),
                 ).fetchone()
                 entry_id = int(row["entry_id"])
+                is_new = False
             conn.commit()
-        self._update_event_ref(event_id, "episodic_entries", entry_id)
+        # Only log an event for genuinely NEW snippets. Re-capturing the same
+        # transcript (every session-end hook) used to insert a fresh episodic.add
+        # event per already-deduped snippet — 1000 entries had grown 787k events
+        # (~270MB). The event is provenance for a real insert, nothing more.
+        if is_new:
+            event_id = self._insert_event(
+                event_type="episodic.add",
+                scope="global",
+                source=source,
+                content=f"{session_id} {role}: {text[:240]}",
+                trust_score=trust_score,
+            )
+            self._update_event_ref(event_id, "episodic_entries", entry_id)
         return entry_id
 
     def consolidate_session(
@@ -362,6 +369,36 @@ class SharedMemoryStore:
                 (max(1, int(max_entries)),),
             )
             after = int(conn.execute("SELECT COUNT(*) FROM episodic_entries").fetchone()[0])
+            conn.commit()
+        return before - after
+
+    def prune_events(self, *, max_age_days: int = 30, keep_recent: int = 20000) -> int:
+        """Bound the audit log. fact.add / handoff.write events are durable
+        provenance and kept; high-volume capture events (episodic.add) are pruned
+        by age and a hard recency cap so the events table can't balloon again."""
+
+        self.ensure()
+        with closing(self.connect()) as conn:
+            before = int(conn.execute("SELECT COUNT(*) FROM events").fetchone()[0])
+            conn.execute(
+                "DELETE FROM events WHERE event_type = 'episodic.add' "
+                "AND created_at < datetime('now', ?)",
+                (f"-{max(1, int(max_age_days))} days",),
+            )
+            conn.execute(
+                """
+                DELETE FROM events
+                WHERE event_type = 'episodic.add'
+                  AND event_id NOT IN (
+                      SELECT event_id FROM events
+                      WHERE event_type = 'episodic.add'
+                      ORDER BY event_id DESC
+                      LIMIT ?
+                  )
+                """,
+                (max(0, int(keep_recent)),),
+            )
+            after = int(conn.execute("SELECT COUNT(*) FROM events").fetchone()[0])
             conn.commit()
         return before - after
 
@@ -588,20 +625,18 @@ class SharedMemoryStore:
         return _row_to_handoff(row) if row else None
 
     def consolidate(self, *, user_limit: int = 12, memory_limit: int = 24) -> None:
-        """Regenerate small USER.md and MEMORY.md working-set views."""
+        """Regenerate small USER.md and MEMORY.md working-set views.
+
+        The always-loaded views are built from *curated* facts (manual writes and
+        handoffs), queried directly so an important-but-older fact is never pushed
+        out of the window by a flood of recent capture entries. Capture-distilled
+        facts stay in the DB and remain searchable — they just don't pollute the
+        always-on context.
+        """
 
         self.ensure()
-        user_facts = [
-            fact
-            for fact in self.list(limit=100)
-            if fact.category == "user_pref"
-        ][:user_limit]
-        memory_facts = [
-            fact
-            for fact in self.list(limit=100)
-            if fact.category != "user_pref"
-            and fact.memory_type in {"semantic", "procedural", "resource", "handoff"}
-        ][:memory_limit]
+        user_facts = self._working_set_facts(user=True, limit=user_limit)
+        memory_facts = self._working_set_facts(user=False, limit=memory_limit)
         self._write_generated_view(
             self.user_file,
             "Mneme Generated User Working Set",
@@ -614,6 +649,68 @@ class SharedMemoryStore:
             memory_facts,
             self.latest_handoff("project"),
         )
+
+    def _working_set_facts(self, *, user: bool, limit: int) -> list[Fact]:
+        """Curated facts for an always-loaded view, newest first and deduped.
+
+        USER.md draws identity/preferences (`user_pref`); MEMORY.md draws project
+        knowledge. Both exclude `source='capture'` so the always-on context stays
+        clean — capture stays reachable through `search`.
+        """
+
+        if user:
+            where = "category = 'user_pref'"
+        else:
+            where = (
+                "category != 'user_pref' "
+                "AND memory_type IN ('semantic','procedural','resource','handoff') "
+                "AND source != 'capture'"
+            )
+        with closing(self.connect()) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT fact_id, content, category, tags, trust_score, memory_type,
+                       scope, key, version, source, provenance
+                FROM facts
+                WHERE superseded_by IS NULL AND {where}
+                ORDER BY updated_at DESC, fact_id DESC
+                LIMIT 200
+                """
+            ).fetchall()
+        facts = [_row_to_fact(row) for row in rows]
+        return _dedupe_by_content(facts)[: max(1, limit)]
+
+    def repair_corrupted_content(self) -> int:
+        """One-time cleanup: re-normalize every fact so previously-stored tool-call
+        markup is stripped. Returns the number of rows changed."""
+
+        self.ensure()
+        changed = 0
+        with closing(self.connect()) as conn:
+            rows = conn.execute("SELECT fact_id, content FROM facts").fetchall()
+            for row in rows:
+                cleaned = _normalize_content(str(row["content"]))
+                if cleaned and cleaned != row["content"]:
+                    try:
+                        conn.execute(
+                            "UPDATE facts SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE fact_id = ?",
+                            (cleaned, row["fact_id"]),
+                        )
+                        changed += 1
+                    except sqlite3.IntegrityError:
+                        # Cleaning produced a duplicate of an existing fact — drop this one.
+                        conn.execute("DELETE FROM facts WHERE fact_id = ?", (row["fact_id"],))
+                        changed += 1
+            conn.commit()
+        if changed:
+            self._rebuild_fts_safe()
+            self.consolidate()
+        return changed
+
+    def _rebuild_fts_safe(self) -> None:
+        with closing(self.connect()) as conn:
+            _rebuild_fts(conn)
+            conn.commit()
 
     def _get_fact(self, fact_id: int) -> Fact | None:
         with closing(self.connect()) as conn:
@@ -934,8 +1031,24 @@ def _row_to_handoff(row: sqlite3.Row) -> Handoff:
     )
 
 
+# A buggy MCP client occasionally serializes a tool call so that the next
+# parameter's opening markup bleeds into `content` (e.g. it ends with
+# `</content> <parameter name="category">project`). The store is ground truth,
+# so it must never persist tool-call scaffolding — strip it at the boundary.
+_TOOL_MARKUP_RE = re.compile(r"</?content>\s*<parameter\b.*$", re.IGNORECASE | re.DOTALL)
+_ORPHAN_PARAM_RE = re.compile(r"<parameter\s+name=.*$", re.IGNORECASE | re.DOTALL)
+_ANTML_TAG_RE = re.compile(r"</?antml:[^>]*>")
+
+
+def _strip_tool_markup(text: str) -> str:
+    text = _TOOL_MARKUP_RE.sub("", text)
+    text = _ANTML_TAG_RE.sub("", text)
+    text = _ORPHAN_PARAM_RE.sub("", text)
+    return text.strip()
+
+
 def _normalize_content(content: str | None) -> str:
-    return re.sub(r"\s+", " ", (content or "").strip())
+    return re.sub(r"\s+", " ", _strip_tool_markup(content or "")).strip()
 
 
 def _normalize_key(key: str | None) -> str:
@@ -964,6 +1077,26 @@ def _dedupe_current(facts: list[Fact]) -> list[Fact]:
     kept: list[Fact] = []
     for fact in sorted(facts, key=_fact_rank_key, reverse=True):
         marker = fact.key or f"content:{fact.content}"
+        if marker in seen:
+            continue
+        seen.add(marker)
+        kept.append(fact)
+    return kept
+
+
+def _dedupe_by_content(facts: list[Fact]) -> list[Fact]:
+    """Collapse near-duplicates so keyless facts that restate the same thing don't
+    both reach the always-on view. Keyed facts dedupe by key; the rest by their
+    first 8 significant words (input order is preserved)."""
+
+    seen: set[str] = set()
+    kept: list[Fact] = []
+    for fact in facts:
+        if fact.key:
+            marker = f"key:{fact.key}"
+        else:
+            words = re.findall(r"[a-z0-9]+", fact.content.lower())[:8]
+            marker = "words:" + " ".join(words)
         if marker in seen:
             continue
         seen.add(marker)

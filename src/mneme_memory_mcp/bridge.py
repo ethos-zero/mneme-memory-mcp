@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -76,7 +77,7 @@ def delegate_to_claude(
     if model:
         command.extend(["--model", model])
     command.append(prompt)
-    return _run("claude", command, workdir, timeout_seconds)
+    return _run("claude", command, workdir, timeout_seconds, env=_claude_env())
 
 
 def delegate_to_codex(
@@ -102,6 +103,12 @@ def delegate_to_codex(
         "--color",
         "never",
     ]
+    if sandbox == "workspace-write":
+        # The shared Mneme store lives at ~/.hermes, outside the workspace. Make its home a
+        # writable root so the delegate's nested memory MCP writes — and even reads, which
+        # run migrate-on-open — don't hit a readonly database.
+        writable_roots = json.dumps([str(resolve_home())])
+        command.extend(["-c", f"sandbox_workspace_write.writable_roots={writable_roots}"])
     if model:
         command.extend(["--model", model])
     command.append(_with_memory_prompt(prompt, "Codex"))
@@ -161,7 +168,32 @@ def _with_memory_prompt(prompt: str, agent_label: str) -> str:
     return f"{_mneme_system_prompt(agent_label)}\n\nDelegated task:\n{prompt}"
 
 
-def _run(agent: str, command: list[str], cwd: Path, timeout_seconds: int) -> AgentRun:
+def _claude_env() -> dict[str, str]:
+    """Env for the headless `claude` CLI. If it isn't logged in, inject an OAuth token
+    from a known file so bridge delegations don't die with 'Not logged in'."""
+    env = os.environ.copy()
+    if not env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        for candidate in (
+            resolve_home() / "claude-oauth-token",
+            Path.home() / ".draftzero" / "claude-oauth-token",
+        ):
+            try:
+                token = candidate.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if token:
+                env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+                break
+    return env
+
+
+def _run(
+    agent: str,
+    command: list[str],
+    cwd: Path,
+    timeout_seconds: int,
+    env: dict[str, str] | None = None,
+) -> AgentRun:
     command = _windows_batch_safe_command(command)
     try:
         result = subprocess.run(
@@ -174,6 +206,7 @@ def _run(agent: str, command: list[str], cwd: Path, timeout_seconds: int) -> Age
             stdin=subprocess.DEVNULL,
             timeout=_bounded_timeout(timeout_seconds),
             check=False,
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         return AgentRun(

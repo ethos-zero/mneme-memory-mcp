@@ -195,6 +195,7 @@ def _capture_source(
     for session_id in sessions:
         store.consolidate_session(source=source, session_id=session_id)
     store.prune_episodic()
+    store.prune_events()
     return CaptureStats(source=source, files_scanned=len(files), snippets_indexed=indexed)
 
 
