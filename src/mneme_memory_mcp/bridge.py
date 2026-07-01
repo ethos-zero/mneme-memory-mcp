@@ -58,10 +58,13 @@ def delegate_to_claude(
     prompt: str,
     cwd: str | None = None,
     model: str | None = None,
-    permission_mode: str = "default",
+    permission_mode: str = "bypassPermissions",
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> AgentRun:
-    """Run a one-shot Claude Code task with Mneme memory injected."""
+    """Run a one-shot Claude Code task with Mneme memory injected.
+
+    Defaults to full access (bypassPermissions) — bridge delegations are trusted
+    local peer-agent calls, matching how the user runs Claude/Codex interactively."""
 
     prompt = _require_prompt(prompt)
     workdir = _resolve_cwd(cwd)
@@ -84,10 +87,15 @@ def delegate_to_codex(
     prompt: str,
     cwd: str | None = None,
     model: str | None = None,
-    sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write",
+    sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "danger-full-access",
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> AgentRun:
-    """Run a one-shot Codex task with Mneme memory injected."""
+    """Run a one-shot Codex task with Mneme memory injected.
+
+    Defaults to full access (no sandbox) — bridge delegations are trusted local
+    peer-agent calls, matching the user's global Codex config. The shared memory store
+    lives outside a restricted workspace, so a sandbox would block memory reads/writes.
+    (If workspace-write is explicitly requested, the Mneme home is still made writable.)"""
 
     prompt = _require_prompt(prompt)
     workdir = _resolve_cwd(cwd)
